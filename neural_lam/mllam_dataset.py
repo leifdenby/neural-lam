@@ -17,13 +17,73 @@ class MllamDataset(torch.utils.data.Dataset):
 
 
 class GraphWeatherModelDataset(MllamDataset):
+    """
+    Generic pytorch.Dataset class for training datasets produced with mllam-data-prep
+
+    For graph based models there three types of inputs:
+
+    |---------|---------------|------------------------|----------------------------|
+    | type    | time-varying  | predicted by the model | used as input to the model |
+    |---------|---------------|------------------------|----------------------------|
+    | state   | yes           | yes                    | yes                        |
+    | static  | no            | no                     | yes                        |
+    | forcing | yes           | no                     | yes                        |
+    |---------|---------------|------------------------|----------------------------|
+
+    Each of these types of data are expected to be represented by by separate variables
+    in the dataset. Each type of data may contain a number of features (i.e. each variable
+    has a "feature" coordinate, given by the name `{type}_feature`). The spatial coordinates are
+    collapsed to a single `grid_index` dimension. In addition the time-varying input variables
+    have a `time` coordinate. Finally, the dataset is expected to be stored in a zarr format.
+
+    All of these properties are given by the `MODEL_INPUTS` class variable.
+
+    To construct the input-output pairs for the model, the dataset is sampled along the time
+    dimensions to create the following input-output pairs:
+        inputs (X):
+        - init_states: (2, num_grid_nodes, d_features)
+            the initial state (this model uses 2 time steps)
+
+        - forcing_features: (pred_steps, num_grid_nodes, d_forcing),
+            the forcing features (again the same as the AR-number)
+
+        - static_features: (num_grid_nodes, d_static_f)
+        
+        outputs (Y):
+        - target_states: (pred_steps, num_grid_nodes, d_features)
+            the target state (the number of steps being the AR-number)
+            
+    So that the model f attempts to predict the target states given the initial states, forcing
+    and static features, e.g. f(X) = Y_hat, and the loss is computed as the difference between
+    Y_hat and Y.
+
+    The initial states are sampled at times t-2 and t-1, and the target states are sampled
+    at times t0, t1, t2, t3 (the number of steps being the AR-number, or number of auto-
+    regressive steps).
+
+    init_state    s(t-2)   s(t-1)
+    target_state                    s(t0)   s(t1)   s(t2)   s(t3)
+
+    The forcing features are windowed over the time dimension by stacking along the feature
+    dimension, so that the forcing features for the first time step are the forcing features for
+    the time steps t-2, t-1, t0. The forcing features for the second time
+    step are the forcing features for the time steps t-1, t0, t1, and so on.
+
+    forcing                         f(t-2)  f(t-1)  f(t0)   f(t1)
+                                    f(t-1)  f(t0)   f(t1)   f(t2)
+                                    f(t0)   f(t1)   f(t2)   f(t3)
+
+
+
+
+    """
     MODEL_INPUTS = dict(
         state=["time", "grid_index", "state_feature"],
         static=["grid_index", "feature"],
         forcing= ["time", "grid_index", "forcing_feature"]
     )
 
-
+    INPUT_TIMESTEPS = 2
 
 
 class AnalysisDataset(torch.utils.data.Dataset):
