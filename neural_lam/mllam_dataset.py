@@ -44,7 +44,7 @@ class GraphWeatherModelDataset(MllamDataset):
     """
     Generic pytorch.Dataset class for training datasets produced with mllam-data-prep
 
-    For graph based models there three types of inputs:
+    For graph based models there three kinds of data used:
 
     |---------|---------------|------------------------|----------------------------|
     | type    | time-varying  | predicted by the model | used as input to the model |
@@ -54,9 +54,9 @@ class GraphWeatherModelDataset(MllamDataset):
     | forcing | yes           | no                     | yes                        |
     |---------|---------------|------------------------|----------------------------|
 
-    Each of these types of data are expected to be represented by by separate variables
-    in the dataset. Each type of data may contain a number of features (i.e. each variable
-    has a "feature" coordinate, given by the name `{type}_feature`). The spatial coordinates are
+    Each of these kinds of data are expected to be represented by separate variables
+    in the dataset. Each kind of data may contain a number of features (i.e. each variable
+    has a "feature" coordinate, given by the name `{data_kind}_feature`). The spatial coordinates are
     collapsed to a single `grid_index` dimension. In addition the time-varying input variables
     have a `time` coordinate. Finally, the dataset is expected to be stored in a zarr format.
 
