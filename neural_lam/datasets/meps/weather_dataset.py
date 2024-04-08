@@ -34,6 +34,7 @@ class WeatherDataset(torch.utils.data.Dataset):
         control_only=False,
     ):
         super().__init__()
+        self.dataset_name = dataset_name
 
         assert split in ("train", "val", "test"), "Unknown dataset split"
         self.sample_dir_path = os.path.join(
@@ -74,6 +75,12 @@ class WeatherDataset(torch.utils.data.Dataset):
 
         # If subsample index should be sampled (only duing training)
         self.random_subsample = split == "train"
+
+    @property
+    def grid_xy(self):
+        static_dir_path = os.path.join("data", self.dataset_name, "static")
+        xy = np.load(os.path.join(static_dir_path, "nwp_xy.npy"))
+        return xy
 
     def __len__(self):
         return len(self.sample_names)
@@ -246,5 +253,9 @@ class WeatherDataset(torch.utils.data.Dataset):
             dim=2,
         )  # (sample_len-2, N_grid, 3*d_forcing)
         # Now index 0 of ^ corresponds to forcing at index 0-2 of sample
+
+        import ipdb
+
+        ipdb.set_trace()
 
         return init_states, target_states, static_features, forcing_windowed

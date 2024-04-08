@@ -229,6 +229,12 @@ def main():
         num_workers=args.n_workers,
     )
 
+    train_loader.dataset[0]
+
+    import ipdb
+
+    ipdb.set_trace()
+
     # Instantiate model + trainer
     if torch.cuda.is_available():
         device_name = "cuda"
