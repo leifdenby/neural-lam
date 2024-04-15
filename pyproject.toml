@@ -72,6 +72,7 @@ dev = [
     "pre-commit>=3.7.0",
     "ipdb>=0.13.13",
     "pytest>=8.1.1",
+    "ipykernel>=6.29.4",
 ]
 [project]
 name = "neural-lam"
@@ -100,6 +101,7 @@ dependencies = [
     "pre-commit>=2.15.0",
     "torch-geometric>=2.5.2",
     "loguru>=0.7.2",
+    "mllam-data-interface @ git+https://github.com/mllam/mllam-data-interface",
 ]
 requires-python = ">=3.10"
 readme = "README.md"
