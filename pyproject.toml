@@ -73,6 +73,8 @@ dev = [
     "ipdb>=0.13.13",
     "pytest>=8.1.1",
     "ipykernel>=6.29.4",
+    "nb-black @ git+https://github.com/leifdenby/nb_black/",
+    "seaborn>=0.13.2",
 ]
 [project]
 name = "neural-lam"

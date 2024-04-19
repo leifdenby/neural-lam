@@ -1,9 +1,10 @@
-import neural_lam.mesh.create as create_mesh
-import neural_lam.mesh.plot as plot_mesh
+import neural_lam.graph.create as graph_creation
+import neural_lam.graph.plot as graph_plotting
 
 from loguru import logger
 import numpy as np
 from torch_geometric.utils.convert import from_networkx as pyg_from_networkx
+import pytest
 
 
 def _create_fake_xy(N=10):
@@ -14,9 +15,9 @@ def _create_fake_xy(N=10):
     return xy
 
 
-def test_create_mesh():
+def test_create_single_level_mesh_graph():
     xy = _create_fake_xy(N=4)
-    mesh_graph = create_mesh.create_single_level_2d_mesh_graph(xy=xy, nx=5, ny=5)
+    mesh_graph = graph_creation.create_single_level_2d_mesh_graph(xy=xy, nx=5, ny=5)
 
     # use networkx to make a plot of the graph and save it as a png
     import networkx as nx
@@ -40,12 +41,13 @@ def test_create_mesh():
     fig, ax = plt.subplots(figsize=(s * r + 2.0, s), dpi=200)
     ax.scatter(xy[0], xy[1], color="r", marker=".", s=0.5, alpha=0.5)
     g = mesh_graph
-    plot_mesh.plot_graph(pyg_from_networkx(g), ax=ax, title=f"Mesh graph, level {lev}")
+    graph_plotting.plot_graph(pyg_from_networkx(g), ax=ax, title=f"Mesh graph, level {lev}")
     fig.savefig(f"mesh_{lev}.png")
 
 
-def test_full():
+@pytest.mark.parametrize("kind", ["flat_multiscale", "hierarchical"])
+def test_create_full_graph(kind):
     xy = _create_fake_xy(N=64)
-    create_mesh.create_mesh_graphs(
-        xy=xy, levels=4, create_plots=True, kind="flat"
+    graph_creation.create_all_graph_components(
+        xy=xy, max_num_levels=3, refinement_factor=2, m2m_connectivity=kind
     )

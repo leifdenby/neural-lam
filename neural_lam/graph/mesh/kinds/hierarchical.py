@@ -3,6 +3,9 @@ import numpy as np
 import networkx
 from loguru import logger
 from torch_geometric.utils.convert import from_networkx as pyg_from_networkx
+import torch
+
+from .. import mesh as mesh_graph
 
 
 def sort_nodes_internally(nx_graph):
@@ -14,14 +17,24 @@ def sort_nodes_internally(nx_graph):
     H.add_edges_from(nx_graph.edges(data=True))
     return H
 
+
 def from_networkx_with_start_index(nx_graph, start_index):
     pyg_graph = pyg_from_networkx(nx_graph)
     pyg_graph.edge_index += start_index
     return pyg_graph
 
-def _create_hierarcical_mesh(G_all_levels, plot):
+
+def create_hierarchical_multiscale_mesh_graph(
+    xy, refinement_factor: int, max_num_levels: int
+):
+    G_all_levels: list[networkx.DiGraph] = mesh_graph.create_2d_mesh_graphs(
+        max_num_levels=max_num_levels,
+        xy=xy,
+        refinement_factor=refinement_factor,
+    )
     mesh_levels = len(G_all_levels)
     # Relabel nodes of each level with level index first
+
     G_all_levels = [
         prepend_node_index(graph, level_i)
         for level_i, graph in enumerate(G_all_levels)
