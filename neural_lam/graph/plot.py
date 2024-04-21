@@ -64,19 +64,30 @@ def _get_graph_attr_values(g, attr_name, component="edges"):
 
     return attr_vals_for_plot
 
-def _create_graph_attr_legend(discrete_labels, cmap, attr_kind, attr_name, loc, norm):
+def _create_graph_attr_legend(ax, discrete_labels, cmap, attr_kind, attr_name, loc, norm):
+    if attr_kind == "edge":
+        kwargs = dict(
+            marker=""
+        )
+        colouring = "color"
+    elif attr_kind == "node":
+        kwargs = dict(
+            marker="o",
+            color="w"
+        )
+        colouring = "markerfacecolor"
+        
     legend_handles = [
         plt.Line2D(
             [0],
             [0],
-            marker="o",
-            color="w",
             label=label,
-            markerfacecolor=cmap(norm(val)),
+            **kwargs,
+            **{colouring: cmap(norm(val))}
         )
         for (label, val) in discrete_labels.items()
     ]
-    legend = plt.legend(
+    legend = ax.legend(
         handles=legend_handles, title=f"{attr_kind} {attr_name}", loc=loc
     )
     return legend
@@ -89,19 +100,9 @@ def _create_graph_attr_colorbar(ax, cmap, norm, attr_name, attr_kind, loc):
     else:
         raise ValueError(f"loc {loc} not in ['upper left', 'upper right']")
     
-    # set the facecolor of the inset axes to white
-    ax_inset.set_facecolor('white')
-    
     cbar = ColorbarBase(ax=ax_inset, cmap=cmap, norm=norm, orientation="horizontal")
 
     ax_inset.set_title(f"{attr_kind} {attr_name}", fontsize=10)
-    fig = ax.figure
-    bbox = ax_inset.get_tightbbox(fig.canvas.get_renderer())
-    x0, y0, width, height = bbox.transformed(fig.transFigure.inverted()).bounds
-    # slightly increase the very tight bounds:
-    xpad = 0.05 * width
-    ypad = 0.05 * height
-    fig.add_artist(plt.Rectangle((x0-xpad, y0-ypad), width+2*xpad, height+2*ypad, edgecolor='lightgrey', linewidth=1, fill=False))
     return cbar
 
 
@@ -162,6 +163,7 @@ def nx_draw_with_pos_and_attr(
         norm = Normalize(vmin=kwargs["vmin"], vmax=kwargs["vmax"])
         if "discrete_labels" in node_attr_vals:
             legend = _create_graph_attr_legend(
+                ax=ax,
                 discrete_labels=node_attr_vals["discrete_labels"],
                 cmap=kwargs["cmap"],
                 attr_kind="node",
@@ -177,6 +179,7 @@ def nx_draw_with_pos_and_attr(
         norm = Normalize(vmin=kwargs["edge_vmin"], vmax=kwargs["edge_vmax"])
         if "discrete_labels" in edge_attr_vals:
             legend = _create_graph_attr_legend(
+                    ax=ax,
                 discrete_labels=edge_attr_vals["discrete_labels"],
                 cmap=kwargs["edge_cmap"],
                 attr_kind="edge",

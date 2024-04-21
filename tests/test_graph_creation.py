@@ -51,3 +51,11 @@ def test_create_full_graph(kind):
     graph_creation.create_all_graph_components(
         xy=xy, max_num_levels=3, refinement_factor=2, m2m_connectivity=kind
     )
+    
+
+@pytest.mark.parametrize("merge_components", [True, False])
+def test_create_graph_architype(merge_components):
+    xy = _create_fake_xy(N=64)
+    graph_creation.architypes.create_keissler_graph(xy, merge_components=merge_components)
+    graph_creation.architypes.create_graphcast_graph(xy, merge_components=merge_components)
+    graph_creation.architypes.create_oscarsson_hierarchical_graph(xy, merge_components=merge_components)
