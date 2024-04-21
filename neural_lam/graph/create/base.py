@@ -49,6 +49,7 @@ from loguru import logger
 from ...datasets.meps.weather_dataset import WeatherDataset
 from ..save import save_edges, save_edges_list
 from ..mesh.kinds.flat import create_flat_multiscale_mesh_graph
+from ..mesh.kinds.hierarchical import create_hierarchical_multiscale_mesh_graph
 from ..networkx_utils import prepend_node_index
 from .. import mesh as mesh_graph
 from .. import grid as grid_graph
@@ -77,11 +78,9 @@ def create_all_graph_components(
     elif m2m_connectivity == "hierarchical":
         # hierarchical mesh graph have three sub-graphs:
         # `m2m` (mesh-to-mesh), `mesh_up` (up edge connections) and `mesh_down` (down edge connections)
-        hierarchical_graph_components = (
-            mesh_graph.create_hierarchical_multiscale_mesh_graph(
-                xy=xy,
-                **m2m_connectivity_kwargs,
-            )
+        hierarchical_graph_components = create_hierarchical_multiscale_mesh_graph(
+            xy=xy,
+            **m2m_connectivity_kwargs,
         )
         graph_components.update(hierarchical_graph_components)
     elif m2m_connectivity == "flat_multiscale":

@@ -6,6 +6,7 @@ from torch_geometric.utils.convert import from_networkx as pyg_from_networkx
 import torch
 
 from .. import mesh as mesh_graph
+from ...networkx_utils import prepend_node_index
 
 
 def sort_nodes_internally(nx_graph):
@@ -27,7 +28,7 @@ def from_networkx_with_start_index(nx_graph, start_index):
 def create_hierarchical_multiscale_mesh_graph(
     xy, refinement_factor: int, max_num_levels: int
 ):
-    G_all_levels: list[networkx.DiGraph] = mesh_graph.create_2d_mesh_graphs(
+    G_all_levels: list[networkx.DiGraph] = mesh_graph.create_multirange_2d_mesh_graphs(
         max_num_levels=max_num_levels,
         xy=xy,
         refinement_factor=refinement_factor,
@@ -104,14 +105,14 @@ def create_hierarchical_multiscale_mesh_graph(
         up_graphs.append(pyg_up)
         down_graphs.append(pyg_down)
 
-        if plot:
-            plot_graph(
-                pyg_down, title=f"Down graph, {from_level} -> {to_level}"
-            )
-            plt.show()
+        # if plot:
+            # plot_graph(
+                # pyg_down, title=f"Down graph, {from_level} -> {to_level}"
+            # )
+            # plt.show()
 
-            plot_graph(pyg_down, title=f"Up graph, {to_level} -> {from_level}")
-            plt.show()
+            # plot_graph(pyg_down, title=f"Up graph, {to_level} -> {from_level}")
+            # plt.show()
 
     # Save up and down edges
     # save_edges_list(up_graphs, "mesh_up", graph_dir_path)
