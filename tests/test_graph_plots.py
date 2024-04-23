@@ -4,7 +4,7 @@ import pytest
 from loguru import logger
 import tempfile
 
-import neural_lam.graph.create as graph_creation
+import neural_lam.graph.create.base as graph_creation
 import neural_lam.graph.plot as graph_plots
 
 def _create_fake_xy(N=10):

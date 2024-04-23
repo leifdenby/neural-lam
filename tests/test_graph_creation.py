@@ -45,17 +45,11 @@ def test_create_single_level_mesh_graph():
     fig.savefig(f"mesh_{lev}.png")
 
 
-@pytest.mark.parametrize("kind", ["flat_multiscale", "hierarchical"])
-def test_create_full_graph(kind):
-    xy = _create_fake_xy(N=64)
-    graph_creation.create_all_graph_components(
-        xy=xy, max_num_levels=3, refinement_factor=2, m2m_connectivity=kind
-    )
-    
-
+@pytest.mark.parametrize("kind", ["graphcast", "keissler", "oscarsson_hierarchical"])
 @pytest.mark.parametrize("merge_components", [True, False])
-def test_create_graph_architype(merge_components):
+def test_create_graph_architype(merge_components, kind):
     xy = _create_fake_xy(N=64)
-    graph_creation.architypes.create_keissler_graph(xy, merge_components=merge_components)
-    graph_creation.architypes.create_graphcast_graph(xy, merge_components=merge_components)
-    graph_creation.architypes.create_oscarsson_hierarchical_graph(xy, merge_components=merge_components)
+    fn_name = f"create_{kind}_graph"
+    fn = getattr(graph_creation.architypes, fn_name)
+
+    fn(xy_grid=xy, merge_components=merge_components)

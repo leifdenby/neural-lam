@@ -91,6 +91,8 @@ def create_multirange_2d_mesh_graphs(max_num_levels, xy, refinement_factor=3):
     scales spanning the spatial domain of the xy coordinates.
     This list of graphs can then later be for example a) flattened into single graph
     containing multiple ranges of connections or b) combined into a hierarchical graph.
+    
+    Each graph in the list contains a "level" attribute with the level index of the graph.
 
     Parameters
     ----------
@@ -125,6 +127,7 @@ def create_multirange_2d_mesh_graphs(max_num_levels, xy, refinement_factor=3):
         g = create_single_level_2d_mesh_graph(xy, n, n)
         for node in g.nodes:
             g.nodes[node]["level"] = lev
+            g.graph["level"] = lev
         G_all_levels.append(g)
 
     return G_all_levels

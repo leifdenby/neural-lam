@@ -1,7 +1,7 @@
 from . import create_all_graph_components
 
 
-def create_keissler_graph(xy_grid, refinement_factor=2, merge_components=True):
+def create_keissler_graph(xy_grid, refinement_factor=3, merge_components=True):
     return create_all_graph_components(
         xy=xy_grid,
         merge_components=merge_components,

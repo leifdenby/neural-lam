@@ -33,7 +33,7 @@ def create_hierarchical_multiscale_mesh_graph(
         xy=xy,
         refinement_factor=refinement_factor,
     )
-    mesh_levels = len(G_all_levels)
+    n_mesh_levels = len(G_all_levels)
     # Relabel nodes of each level with level index first
 
     G_all_levels = [
@@ -50,13 +50,13 @@ def create_hierarchical_multiscale_mesh_graph(
     # Create inter-level mesh edges
     up_graphs = []
     down_graphs = []
-    for from_level, to_level, G_from, G_to, start_index in zip(
-        range(1, mesh_levels),
-        range(0, mesh_levels - 1),
+    for G_from, G_to in zip(
         G_all_levels[1:],
         G_all_levels[:-1],
-        first_index_level[: mesh_levels - 1],
     ):
+        from_level = G_from.graph["level"]
+        to_level = G_to.graph["level"]
+
         # start out from graph at from level
         G_down = G_from.copy()
         G_down.clear_edges()
@@ -87,53 +87,20 @@ def create_hierarchical_multiscale_mesh_graph(
             G_down.edges[u, v]["vdiff"] = (
                 G_down.nodes[u]["pos"] - G_down.nodes[v]["pos"]
             )
+            G_down.edges[u, v]["levels"] = f"{from_level}>{to_level}"
 
-        # relabel nodes to integers (sorted)
-        G_down_int = networkx.convert_node_labels_to_integers(
-            G_down, first_label=start_index, ordering="sorted"
-        )  # Issue with sorting here
-        G_down_int = sort_nodes_internally(G_down_int)
-        pyg_down = from_networkx_with_start_index(G_down_int, start_index)
+        G_up = networkx.DiGraph()
+        G_up.add_nodes_from(G_down.nodes(data=True))
+        for (u, v, data) in G_down.edges(data=True):
+            data["levels"] = f"{to_level}>{from_level}"
+            G_up.add_edge(v, u, **data)
 
-        # Create up graph, invert downwards edges
-        up_edges = torch.stack(
-            (pyg_down.edge_index[1], pyg_down.edge_index[0]), dim=0
-        )
-        pyg_up = pyg_down.clone()
-        pyg_up.edge_index = up_edges
-
-        up_graphs.append(pyg_up)
-        down_graphs.append(pyg_down)
-
-        # if plot:
-            # plot_graph(
-                # pyg_down, title=f"Down graph, {from_level} -> {to_level}"
-            # )
-            # plt.show()
-
-            # plot_graph(pyg_down, title=f"Up graph, {to_level} -> {from_level}")
-            # plt.show()
-
-    # Save up and down edges
-    # save_edges_list(up_graphs, "mesh_up", graph_dir_path)
-    # save_edges_list(down_graphs, "mesh_down", graph_dir_path)
-    logger.warning("not saving")
-
-    # Extract intra-level edges for m2m
-    m2m_graphs = [
-        from_networkx_with_start_index(
-            networkx.convert_node_labels_to_integers(
-                level_graph, first_label=start_index, ordering="sorted"
-            ),
-            start_index,
-        )
-        for level_graph, start_index in zip(G_all_levels, first_index_level)
-    ]
-
-    # For use in g2m and m2g
-    G_bottom_mesh = G_all_levels[0]
-
-    joint_mesh_graph = networkx.union_all([graph for graph in G_all_levels])
-    all_mesh_nodes = joint_mesh_graph.nodes(data=True)
-
-    return m2m_graphs, G_bottom_mesh, all_mesh_nodes
+        up_graphs.append(G_up)
+        down_graphs.append(G_down)
+        
+    G_up_all = networkx.compose_all(up_graphs)
+    G_down_all = networkx.compose_all(down_graphs)
+    
+    G_m2m = networkx.union_all(G_all_levels)
+    
+    return dict(m2m=G_m2m, mesh_down=G_down_all, mesh_up=G_up_all)
