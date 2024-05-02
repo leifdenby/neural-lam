@@ -11,7 +11,7 @@ from neural_lam import utils, constants
 
 
 class MllamDataset(torch.utils.data.Dataset):
-    def __self__(self, dataset_path, n_predicition_timesteps):
+    def __init__(self, dataset_path, n_prediction_timesteps):
         """
         Base class for datasets used in the mllam project.
         
@@ -24,7 +24,7 @@ class MllamDataset(torch.utils.data.Dataset):
         
         self.ds = xr.open_zarr(self.dataset_path)
         self.n_input_timesteps = self.N_INPUT_TIMESTEPS
-        self.n_predicition_timesteps = n_predicition_timesteps
+        self.n_prediction_timesteps = n_prediction_timesteps
         
         # check that the `DATA_VARIABLES` dictionary is defined and that all the
         # variables are present in the dataset
@@ -33,11 +33,19 @@ class MllamDataset(torch.utils.data.Dataset):
             assert var in self.ds, f"Variable {var} not found in dataset"
             for dim in self.DATASET_VARIABLES[var]:
                 assert dim in self.ds[var].dims, f"Dimension {dim} not found in variable {var}"
+                
+        # check that there are enough timesteps in the datasets to create at least
+        # one input-output pair
+        if len(self.ds.time) < self.n_input_timesteps + self.n_prediction_timesteps:
+            raise ValueError(
+                f"Too few timesteps ({len(self.ds.time)}) in dataset to create input-output pairs"
+                f" (n_input_timesteps={self.n_input_timesteps}, n_prediction_timesteps={self.n_prediction_timesteps})"
+            )
         
 
     def __len__(self):
         nt = self.ds.time.shape[0]
-        return nt - self.n_input_timesteps - self.n_predicition_timesteps
+        return nt - self.n_input_timesteps - self.n_prediction_timesteps
 
 
 class GraphWeatherModelDataset(MllamDataset):
@@ -113,18 +121,27 @@ class GraphWeatherModelDataset(MllamDataset):
         
         
     def __getitem__(self, idx):
-        ds_sample = self.ds.isel(time=slice(idx, idx + self.n_input_timesteps + self.n_predicition_timesteps))
+        ds_sample = self.ds.isel(time=slice(idx, idx + self.n_input_timesteps + self.n_prediction_timesteps))
+        
+        # order the dimensions as the model expects
+        for var in self.DATASET_VARIABLES:
+            ds_sample[var] = ds_sample[var].transpose(*self.DATASET_VARIABLES[var])
         
         da_init_states = ds_sample.isel(time=slice(0, self.n_input_timesteps)).state
-        da_target_states = ds_sample.isel(time=slice(self.n_input_timesteps, self.n_input_timesteps + self.n_predicition_timesteps)).state
+        da_target_states = ds_sample.isel(time=slice(self.n_input_timesteps, self.n_input_timesteps + self.n_prediction_timesteps)).state
         
         # each prediction will always be made with n_input_timesteps to predict the
         # next timestep, so we need n_input_timesteps + 1 forcing features aligned
         # with the target
         das_forcing = []
-        for i in range(self.n_predicition_timesteps + 1):
-            das_forcing.append(ds_sample.isel(time=slice(i, i + self.n_input_timesteps)).forcing)
-        da_forcing = xr.concat(das_forcing, dim='forcing_features')
+        for i in range(self.n_input_timesteps+1):
+            da_forcing_window = ds_sample.isel(time=slice(i, i + self.n_prediction_timesteps)).forcing
+            # need to drop time values for all but the first forcing window
+            # otherwise concat below will just fill in with nans for the times that are outside of each window
+            if i > 0:
+                da_forcing_window = da_forcing_window.drop('time')
+            das_forcing.append(da_forcing_window)
+        da_forcing = xr.concat(das_forcing, dim='forcing_feature')
         
         da_static_features = ds_sample.static
         
@@ -134,4 +151,9 @@ class GraphWeatherModelDataset(MllamDataset):
         forcing_windowed = torch.tensor(da_forcing.values)
         static_features = torch.tensor(da_static_features.values)
         
-        return init_states, target_states, static_features, forcing_windowed
+        return dict(
+            init_states=init_states,
+            target_states=target_states,
+            static_features=static_features,
+            forcing_windowed=forcing_windowed
+        )

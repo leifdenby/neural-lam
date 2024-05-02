@@ -254,8 +254,9 @@ class WeatherDataset(torch.utils.data.Dataset):
         )  # (sample_len-2, N_grid, 3*d_forcing)
         # Now index 0 of ^ corresponds to forcing at index 0-2 of sample
 
-        import ipdb
-
-        ipdb.set_trace()
-
-        return init_states, target_states, static_features, forcing_windowed
+        return dict(
+            init_states=init_states,
+            target_states=target_states,
+            static_features=static_features,
+            forcing_windowed=forcing_windowed
+        )
