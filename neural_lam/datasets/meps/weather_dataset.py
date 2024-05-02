@@ -258,5 +258,5 @@ class WeatherDataset(torch.utils.data.Dataset):
             init_states=init_states,
             target_states=target_states,
             static_features=static_features,
-            forcing_windowed=forcing_windowed
+            forcing_windowed=forcing_windowed,
         )

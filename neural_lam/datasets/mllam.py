@@ -1,47 +1,46 @@
-import os
-import glob
+# Third-party
 import torch
-import numpy as np
-import datetime as dt
-import random
 import xarray as xr
-from copy import deepcopy
-
-from neural_lam import utils, constants
 
 
 class MllamDataset(torch.utils.data.Dataset):
     def __init__(self, dataset_path, n_prediction_timesteps):
         """
         Base class for datasets used in the mllam project.
-        
+
         To create a pytorch.Dataset for a specific model, subclass this class,
         implement the `__getitem__` method and define the `DATA_VARIABLES` dictionary
         (which should contain the names of the variables the input dataset is expected
         to contain, and the dimensions of each variable).
         """
         self.dataset_path = dataset_path
-        
+
         self.ds = xr.open_zarr(self.dataset_path)
         self.n_input_timesteps = self.N_INPUT_TIMESTEPS
         self.n_prediction_timesteps = n_prediction_timesteps
-        
+
         # check that the `DATA_VARIABLES` dictionary is defined and that all the
         # variables are present in the dataset
-        assert hasattr(self, "DATASET_VARIABLES"), "DATASET_VARIABLES not defined"
+        assert hasattr(
+            self, "DATASET_VARIABLES"
+        ), "DATASET_VARIABLES not defined"
         for var in self.DATASET_VARIABLES:
             assert var in self.ds, f"Variable {var} not found in dataset"
             for dim in self.DATASET_VARIABLES[var]:
-                assert dim in self.ds[var].dims, f"Dimension {dim} not found in variable {var}"
-                
+                assert (
+                    dim in self.ds[var].dims
+                ), f"Dimension {dim} not found in variable {var}"
+
         # check that there are enough timesteps in the datasets to create at least
         # one input-output pair
-        if len(self.ds.time) < self.n_input_timesteps + self.n_prediction_timesteps:
+        if (
+            len(self.ds.time)
+            < self.n_input_timesteps + self.n_prediction_timesteps
+        ):
             raise ValueError(
                 f"Too few timesteps ({len(self.ds.time)}) in dataset to create input-output pairs"
                 f" (n_input_timesteps={self.n_input_timesteps}, n_prediction_timesteps={self.n_prediction_timesteps})"
             )
-        
 
     def __len__(self):
         nt = self.ds.time.shape[0]
@@ -80,11 +79,11 @@ class GraphWeatherModelDataset(MllamDataset):
             the forcing features (again the same as the AR-number)
 
         - static_features: (num_grid_nodes, d_static_f)
-        
+
         outputs (Y):
         - target_states: (pred_steps, num_grid_nodes, d_features)
             the target state (the number of steps being the AR-number)
-            
+
     So that the model f attempts to predict the target states given the initial states, forcing
     and static features, e.g. f(X) = Y_hat, and the loss is computed as the difference between
     Y_hat and Y.
@@ -104,56 +103,71 @@ class GraphWeatherModelDataset(MllamDataset):
     forcing                         f(t-2)  f(t-1)  f(t0)   f(t1)
                                     f(t-1)  f(t0)   f(t1)   f(t2)
                                     f(t0)   f(t1)   f(t2)   f(t3)
-                                    
+
 
     TODO:
     - implement standardization
     - implement random subsampling
     - implement training/val/test split
     """
+
     DATASET_VARIABLES = dict(
         state=["time", "grid_index", "state_feature"],
         static=["grid_index", "static_feature"],
-        forcing= ["time", "grid_index", "forcing_feature"]
+        forcing=["time", "grid_index", "forcing_feature"],
     )
-    
+
     N_INPUT_TIMESTEPS = 2
-        
-        
+
     def __getitem__(self, idx):
-        ds_sample = self.ds.isel(time=slice(idx, idx + self.n_input_timesteps + self.n_prediction_timesteps))
-        
+        ds_sample = self.ds.isel(
+            time=slice(
+                idx, idx + self.n_input_timesteps + self.n_prediction_timesteps
+            )
+        )
+
         # order the dimensions as the model expects
         for var in self.DATASET_VARIABLES:
-            ds_sample[var] = ds_sample[var].transpose(*self.DATASET_VARIABLES[var])
-        
-        da_init_states = ds_sample.isel(time=slice(0, self.n_input_timesteps)).state
-        da_target_states = ds_sample.isel(time=slice(self.n_input_timesteps, self.n_input_timesteps + self.n_prediction_timesteps)).state
-        
+            ds_sample[var] = ds_sample[var].transpose(
+                *self.DATASET_VARIABLES[var]
+            )
+
+        da_init_states = ds_sample.isel(
+            time=slice(0, self.n_input_timesteps)
+        ).state
+        da_target_states = ds_sample.isel(
+            time=slice(
+                self.n_input_timesteps,
+                self.n_input_timesteps + self.n_prediction_timesteps,
+            )
+        ).state
+
         # each prediction will always be made with n_input_timesteps to predict the
         # next timestep, so we need n_input_timesteps + 1 forcing features aligned
         # with the target
         das_forcing = []
-        for i in range(self.n_input_timesteps+1):
-            da_forcing_window = ds_sample.isel(time=slice(i, i + self.n_prediction_timesteps)).forcing
+        for i in range(self.n_input_timesteps + 1):
+            da_forcing_window = ds_sample.isel(
+                time=slice(i, i + self.n_prediction_timesteps)
+            ).forcing
             # need to drop time values for all but the first forcing window
             # otherwise concat below will just fill in with nans for the times that are outside of each window
             if i > 0:
-                da_forcing_window = da_forcing_window.drop('time')
+                da_forcing_window = da_forcing_window.drop("time")
             das_forcing.append(da_forcing_window)
-        da_forcing = xr.concat(das_forcing, dim='forcing_feature')
-        
+        da_forcing = xr.concat(das_forcing, dim="forcing_feature")
+
         da_static_features = ds_sample.static
-        
+
         # convert each data array to a tensor
         init_states = torch.tensor(da_init_states.values)
         target_states = torch.tensor(da_target_states.values)
         forcing_windowed = torch.tensor(da_forcing.values)
         static_features = torch.tensor(da_static_features.values)
-        
+
         return dict(
             init_states=init_states,
             target_states=target_states,
             static_features=static_features,
-            forcing_windowed=forcing_windowed
+            forcing_windowed=forcing_windowed,
         )
