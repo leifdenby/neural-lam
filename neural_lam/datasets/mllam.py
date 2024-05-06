@@ -119,6 +119,15 @@ class GraphWeatherModelDataset(MllamDataset):
 
     N_INPUT_TIMESTEPS = 2
 
+    @property
+    def xy_coords(self):
+        # NOTE: in future weather-model-graphs will not require that the input
+        # grid is regular, so this step would be uncessary
+        ds_unstacked = self.ds.set_index(grid_index=["x", "y"]).unstack("grid_index")
+        # XXX: remove, reducing size for debugging
+        ds_unstacked = ds_unstacked.isel(x=slice(None, 16), y=slice(None, 16))
+        return np.stack([ds_unstacked.lon, ds_unstacked.lat], axis=0)
+
     def __getitem__(self, idx):
         ds_sample = self.ds.isel(
             time=slice(

@@ -1,14 +1,23 @@
 # First-party
 from neural_lam.datasets.meps.weather_dataset import WeatherDataset
 from neural_lam.datasets.mllam import GraphWeatherModelDataset
+from neural_lam.utils import load_graph
+from neural_lam.models.graph_lam import GraphLAM
+from pathlib import Path
 
-FP_TESTDATA = "/home/lcd/git-repos/mllam-data-prep/example.danra.zarr"
+FP_TESTDATA = Path("/home/leif/git-repos/dmi/mllam/mllam-data-prep/example.danra.zarr")
+
+import numpy as np
+import weather_model_graphs as wmg
+from loguru import logger
+
 
 
 def test_train_with_mllam_dataset():
     n_prediction_timesteps = 19
+    fp_data = FP_TESTDATA
     dataset = GraphWeatherModelDataset(
-        dataset_path=FP_TESTDATA, n_prediction_timesteps=n_prediction_timesteps
+        dataset_path=fp_data, n_prediction_timesteps=n_prediction_timesteps
     )
 
     n_forcing_features = 2
@@ -47,6 +56,17 @@ def test_train_with_mllam_dataset():
         n_forcing_features * (n_input_steps + 1),
     )
     assert item["static_features"].shape == (n_grid, n_static_features)
+
+    xy_grid = dataset.xy_coords
+
+    import ipdb
+    with ipdb.launch_ipdb_on_exception():
+        fp_graph = fp_data.parent / f"{fp_data.stem}.graph"
+        _create_graph(xy_grid=xy_grid, fp_graph=fp_graph)
+
+        model_graph = load_graph(graph_dir_path=fp_graph)
+
+    model = GraphLAM()
 
 
 def test_train_with_meps_dataset():
@@ -88,3 +108,21 @@ def test_train_with_meps_dataset():
         n_forcing_features * (n_input_steps + 1),
     )
     assert item["static_features"].shape == (n_grid, n_static_features)
+
+
+def _create_graph(xy_grid, fp_graph):
+    logger.info("starting graph creation")
+    # create the full graph
+    graph = wmg.create.archetype.create_keisler_graph(xy_grid=xy_grid)
+
+    logger.info("splitting")
+    # split the graph by component
+    graph_components = wmg.split_graph_by_edge_attribute(graph=graph, attribute='component')
+
+    logger.info("saving")
+    # save the graph components to disk in pytorch-geometric format
+    for component_name, graph_component in graph_components.items():
+        kwargs = {}
+        if component_name == "m2m":
+            kwargs["list_from_attribute"] = "level"
+        wmg.save.to_pyg(graph=graph_component, name=component_name, output_directory=fp_graph, **kwargs)
