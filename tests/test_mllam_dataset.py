@@ -1,16 +1,20 @@
+# Standard library
+from pathlib import Path
+
 # First-party
 from neural_lam.datasets.meps.weather_dataset import WeatherDataset
 from neural_lam.datasets.mllam import GraphWeatherModelDataset
-from neural_lam.utils import load_graph
 from neural_lam.models.graph_lam import GraphLAM
-from pathlib import Path
+from neural_lam.utils import load_graph
 
-FP_TESTDATA = Path("/home/leif/git-repos/dmi/mllam/mllam-data-prep/example.danra.zarr")
+FP_TESTDATA = Path(
+    "/home/leif/git-repos/dmi/mllam/mllam-data-prep/example.danra.zarr"
+)
 
+# Third-party
 import numpy as np
 import weather_model_graphs as wmg
 from loguru import logger
-
 
 
 def test_train_with_mllam_dataset():
@@ -59,7 +63,9 @@ def test_train_with_mllam_dataset():
 
     xy_grid = dataset.xy_coords
 
+    # Third-party
     import ipdb
+
     with ipdb.launch_ipdb_on_exception():
         fp_graph = fp_data.parent / f"{fp_data.stem}.graph"
         _create_graph(xy_grid=xy_grid, fp_graph=fp_graph)
@@ -109,6 +115,22 @@ def test_train_with_meps_dataset():
     )
     assert item["static_features"].shape == (n_grid, n_static_features)
 
+    dataset_props = dataset.get_props()
+    
+    required_props = {'border_mask', 'grid_static_features', 'step_diff_mean', 'step_diff_std', 'data_mean', 'data_std', 'param_weights'}
+    
+    # check the sizes of the props
+    assert dataset_props["border_mask"].shape == (n_grid, 1)
+    assert dataset_props["grid_static_features"].shape == (n_grid, n_static_features)
+    assert dataset_props["step_diff_mean"].shape == (n_state_features,)
+    assert dataset_props["step_diff_std"].shape == (n_state_features,)
+    assert dataset_props["data_mean"].shape == (n_state_features,)
+    assert dataset_props["data_std"].shape == (n_state_features,)
+    assert dataset_props["param_weights"].shape == (n_state_features,)
+
+    
+    assert set(dataset_props.keys()) == required_props
+
 
 def _create_graph(xy_grid, fp_graph):
     logger.info("starting graph creation")
@@ -117,7 +139,9 @@ def _create_graph(xy_grid, fp_graph):
 
     logger.info("splitting")
     # split the graph by component
-    graph_components = wmg.split_graph_by_edge_attribute(graph=graph, attribute='component')
+    graph_components = wmg.split_graph_by_edge_attribute(
+        graph=graph, attribute="component"
+    )
 
     logger.info("saving")
     # save the graph components to disk in pytorch-geometric format
@@ -125,4 +149,9 @@ def _create_graph(xy_grid, fp_graph):
         kwargs = {}
         if component_name == "m2m":
             kwargs["list_from_attribute"] = "level"
-        wmg.save.to_pyg(graph=graph_component, name=component_name, output_directory=fp_graph, **kwargs)
+        wmg.save.to_pyg(
+            graph=graph_component,
+            name=component_name,
+            output_directory=fp_graph,
+            **kwargs,
+        )

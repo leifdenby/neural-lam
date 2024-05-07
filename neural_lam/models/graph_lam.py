@@ -15,8 +15,12 @@ class GraphLAM(BaseGraphModel):
     Oskarsson et al. (2023).
     """
 
-    def __init__(self, args):
-        super().__init__(args)
+    def __init__(
+        self, hidden_dim, hidden_layers, mesh_aggr, processor_layers, **kwargs
+    ):
+        super().__init__(
+            hidden_dim=hidden_dim, hidden_layers=hidden_layers, **kwargs
+        )
 
         assert (
             not self.hierarchical
@@ -40,11 +44,11 @@ class GraphLAM(BaseGraphModel):
         processor_nets = [
             InteractionNet(
                 self.m2m_edge_index,
-                args.hidden_dim,
-                hidden_layers=args.hidden_layers,
-                aggr=args.mesh_aggr,
+                hidden_dim,
+                hidden_layers=hidden_layers,
+                aggr=mesh_aggr,
             )
-            for _ in range(args.processor_layers)
+            for _ in range(processor_layers)
         ]
         self.processor = pyg.nn.Sequential(
             "mesh_rep, edge_rep",

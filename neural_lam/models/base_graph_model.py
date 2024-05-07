@@ -13,13 +13,13 @@ class BaseGraphModel(ARModel):
     the encode-process-decode idea.
     """
 
-    def __init__(self, args):
-        super().__init__(args)
+    def __init__(self, graph, hidden_dim, hidden_layers, **kwargs):
+        super().__init__(**kwargs)
 
         # Load graph with static features
         # NOTE: (IMPORTANT!) mesh nodes MUST have the first
         # num_mesh_nodes indices,
-        self.hierarchical, graph_ldict = utils.load_graph(args.graph)
+        self.hierarchical, graph_ldict = utils.load_graph(graph)
         for name, attr_value in graph_ldict.items():
             # Make BufferLists module members and register tensors as buffers
             if isinstance(attr_value, torch.Tensor):
@@ -40,7 +40,7 @@ class BaseGraphModel(ARModel):
 
         # Define sub-models
         # Feature embedders for grid
-        self.mlp_blueprint_end = [args.hidden_dim] * (args.hidden_layers + 1)
+        self.mlp_blueprint_end = [hidden_dim] * (hidden_layers + 1)
         self.grid_embedder = utils.make_mlp(
             [self.grid_dim] + self.mlp_blueprint_end
         )
@@ -51,26 +51,25 @@ class BaseGraphModel(ARModel):
         # encoder
         self.g2m_gnn = InteractionNet(
             self.g2m_edge_index,
-            args.hidden_dim,
-            hidden_layers=args.hidden_layers,
+            hidden_dim,
+            hidden_layers=hidden_layers,
             update_edges=False,
         )
         self.encoding_grid_mlp = utils.make_mlp(
-            [args.hidden_dim] + self.mlp_blueprint_end
+            [hidden_dim] + self.mlp_blueprint_end
         )
 
         # decoder
         self.m2g_gnn = InteractionNet(
             self.m2g_edge_index,
-            args.hidden_dim,
-            hidden_layers=args.hidden_layers,
+            hidden_dim,
+            hidden_layers=hidden_layers,
             update_edges=False,
         )
 
         # Output mapping (hidden_dim -> output_dim)
         self.output_map = utils.make_mlp(
-            [args.hidden_dim] * (args.hidden_layers + 1)
-            + [self.grid_output_dim],
+            [hidden_dim] * (hidden_layers + 1) + [self.grid_output_dim],
             layer_norm=False,
         )  # No layer norm on this one
 
@@ -157,7 +156,7 @@ class BaseGraphModel(ARModel):
             grid_rep
         )  # (B, num_grid_nodes, d_grid_out)
 
-        if self.output_std:
+        if self.include_std_prediction:
             pred_delta_mean, pred_std_raw = net_output.chunk(
                 2, dim=-1
             )  # both (B, num_grid_nodes, d_f)

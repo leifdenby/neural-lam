@@ -1,10 +1,12 @@
 # Third-party
+import numpy as np
 import torch
 import xarray as xr
+from loguru import logger
 
 
 class MllamDataset(torch.utils.data.Dataset):
-    def __init__(self, dataset_path, n_prediction_timesteps):
+    def __init__(self, dataset_path, n_prediction_timesteps, split="train"):
         """
         Base class for datasets used in the mllam project.
 
@@ -14,6 +16,11 @@ class MllamDataset(torch.utils.data.Dataset):
         to contain, and the dimensions of each variable).
         """
         self.dataset_path = dataset_path
+
+        if split != "train":
+            logger.warning(
+                "Only training split is supported for now. Ignoring split argument."
+            )
 
         self.ds = xr.open_zarr(self.dataset_path)
         self.n_input_timesteps = self.N_INPUT_TIMESTEPS
@@ -105,9 +112,18 @@ class GraphWeatherModelDataset(MllamDataset):
                                     f(t0)   f(t1)   f(t2)   f(t3)
 
 
+    ## Additional fields used during training
+
+    In addition to the state, forcing and static fields mentioned above the following sets of
+    variables are also needed during training and are derived from the dataset:
+
+    - "boundary mask":
+
+
     TODO:
     - implement standardization
     - implement random subsampling
+    - implement calculation of per-feature successive "steps" std-dev
     - implement training/val/test split
     """
 
@@ -123,7 +139,9 @@ class GraphWeatherModelDataset(MllamDataset):
     def xy_coords(self):
         # NOTE: in future weather-model-graphs will not require that the input
         # grid is regular, so this step would be uncessary
-        ds_unstacked = self.ds.set_index(grid_index=["x", "y"]).unstack("grid_index")
+        ds_unstacked = self.ds.set_index(grid_index=["x", "y"]).unstack(
+            "grid_index"
+        )
         # XXX: remove, reducing size for debugging
         ds_unstacked = ds_unstacked.isel(x=slice(None, 16), y=slice(None, 16))
         return np.stack([ds_unstacked.lon, ds_unstacked.lat], axis=0)

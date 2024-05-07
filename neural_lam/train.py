@@ -8,12 +8,13 @@ import pytorch_lightning as pl
 import torch
 from lightning_fabric.utilities import seed
 
-# First-party
-from neural_lam import constants, utils
-from neural_lam.models.graph_lam import GraphLAM
-from neural_lam.models.hi_lam import HiLAM
-from neural_lam.models.hi_lam_parallel import HiLAMParallel
-from neural_lam.weather_dataset import WeatherDataset
+# Local
+from . import constants, utils
+from .datasets import mllam
+from .datasets.meps.weather_dataset import WeatherDataset
+from .models.graph_lam import GraphLAM
+from .models.hi_lam import HiLAM
+from .models.hi_lam_parallel import HiLAMParallel
 
 MODELS = {
     "graph_lam": GraphLAM,
@@ -187,7 +188,6 @@ def main():
 
     # Asserts for arguments
     assert args.model in MODELS, f"Unknown model: {args.model}"
-    assert args.step_length <= 3, "Too high step length"
     assert args.eval in (
         None,
         "val",
@@ -200,41 +200,47 @@ def main():
     # Set seed
     seed.seed_everything(args.seed)
 
-    # Load data
-    train_loader = torch.utils.data.DataLoader(
-        WeatherDataset(
+    if args.dataset.endswith(".zarr"):
+        dataset_kwargs = dict(
+            dataset_path=args.dataset, n_prediction_timesteps=args.ar_steps
+        )
+        tds_train = mllam.GraphWeatherModelDataset(
+            split="train", **dataset_kwargs
+        )
+        tds_valid = mllam.GraphWeatherModelDataset(
+            split="val", **dataset_kwargs
+        )
+    else:
+        tds_train = WeatherDataset(
             args.dataset,
             pred_length=args.ar_steps,
             split="train",
             subsample_step=args.step_length,
             subset=bool(args.subset_ds),
             control_only=args.control_only,
-        ),
-        args.batch_size,
-        shuffle=True,
-        num_workers=args.n_workers,
-    )
-    max_pred_length = (65 // args.step_length) - 2  # 19
-    val_loader = torch.utils.data.DataLoader(
-        WeatherDataset(
+        )
+        tds_valid = WeatherDataset(
             args.dataset,
-            pred_length=max_pred_length,
+            pred_length=args.ar_steps,
             split="val",
             subsample_step=args.step_length,
             subset=bool(args.subset_ds),
             control_only=args.control_only,
-        ),
+        )
+
+    # Load data
+    train_loader = torch.utils.data.DataLoader(
+        tds_train,
+        args.batch_size,
+        shuffle=True,
+        num_workers=args.n_workers,
+    )
+    val_loader = torch.utils.data.DataLoader(
+        tds_valid,
         args.batch_size,
         shuffle=False,
         num_workers=args.n_workers,
     )
-
-    train_loader.dataset[0]
-
-    # Third-party
-    import ipdb
-
-    ipdb.set_trace()
 
     # Instantiate model + trainer
     if torch.cuda.is_available():
@@ -244,17 +250,33 @@ def main():
         )  # Allows using Tensor Cores on A100s
     else:
         device_name = "cpu"
+        
+    # TODO: this should be removed and moved into a pyg.HeteroData object
+    # with the rest of the graph
+    dataset_props = tds_train.get_props()
 
     # Load model parameters Use new args for model
-    model_class = MODELS[args.model]
+    ModelClass = MODELS[args.model]
     if args.load:
-        model = model_class.load_from_checkpoint(args.load, args=args)
+        model = ModelClass.load_from_checkpoint(args.load, args=args)
         if args.restore_opt:
             # Save for later
             # Unclear if this works for multi-GPU
             model.opt_state = torch.load(args.load)["optimizer_states"][0]
     else:
-        model = model_class(args)
+        model = ModelClass(
+            lr=args.lr,
+            hidden_dim=args.hidden_dim,
+            hidden_layers=args.hidden_layers,
+            mesh_aggr=args.mesh_aggr,
+            graph=args.graph,
+            processor_layers=args.processor_layers,
+            include_std_prediction=args.output_std,
+            loss_metric_name=args.loss,
+            step_length=args.step_length,
+            n_example_pred=args.n_example_pred,
+            dataset_props=dataset_props
+        )
 
     prefix = "subset-" if args.subset_ds else ""
     if args.eval:

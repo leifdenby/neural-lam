@@ -7,9 +7,10 @@ import numpy as np
 import pytorch_lightning as pl
 import torch
 import wandb
+from loguru import logger
 
-# First-party
-from neural_lam import constants, metrics, utils, vis
+# Local
+from .. import constants, metrics, utils
 
 
 class ARModel(pl.LightningModule):
@@ -21,21 +22,41 @@ class ARModel(pl.LightningModule):
     # pylint: disable=arguments-differ
     # Disable to override args/kwargs from superclass
 
-    def __init__(self, args):
+    def __init__(
+        self,
+        lr,
+        include_std_prediction: bool,
+        loss_metric_name,
+        step_length,
+        n_example_pred,
+        dataset_props,
+    ):
         super().__init__()
         self.save_hyperparameters()
-        self.lr = args.lr
+        self.lr = lr
 
         # Load static features for grid/data
-        static_data_dict = utils.load_static_data(args.dataset)
-        for static_data_name, static_data_tensor in static_data_dict.items():
-            self.register_buffer(
-                static_data_name, static_data_tensor, persistent=False
-            )
+        logger.warning("Static features not loaded in ARModel")
+        # static_data_dict = utils.load_static_data(args.dataset)
+        # for static_data_name, static_data_tensor in static_data_dict.items():
+        # self.register_buffer(
+        # static_data_name, static_data_tensor, persistent=False
+        # )
+
+        # XXX: temporary
+        required_static_vars = [
+            "step_diff_std",
+            "step_diff_mean",
+        ]
+        for v in required_static_vars:
+            vals = dataset_props.get(v)
+            if vals is None:
+                raise ValueError(f"Missing required static variable {v}")
+            self.register_buffer(v, vals, persistent=False)
 
         # Double grid output dim. to also output std.-dev.
-        self.output_std = bool(args.output_std)
-        if self.output_std:
+        self.include_std_prediction = bool(include_std_prediction)
+        if self.include_std_prediction:
             self.grid_output_dim = (
                 2 * constants.GRID_STATE_DIM
             )  # Pred. dim. in grid cell
@@ -56,24 +77,24 @@ class ARModel(pl.LightningModule):
         # grid_dim from data + static + batch_static
         (
             self.num_grid_nodes,
-            grid_static_dim,
+            n_grid_static_dim,
         ) = self.grid_static_features.shape  # 63784 = 268x238
         self.grid_dim = (
             2 * constants.GRID_STATE_DIM
-            + grid_static_dim
+            + n_grid_static_dim
             + constants.GRID_FORCING_DIM
             + constants.BATCH_STATIC_FEATURE_DIM
         )
 
         # Instantiate loss function
-        self.loss = metrics.get_metric(args.loss)
+        self.loss = metrics.get_metric(loss_metric_name)
 
         # Pre-compute interior mask for use in loss function
         self.register_buffer(
             "interior_mask", 1.0 - self.border_mask, persistent=False
         )  # (num_grid_nodes, 1), 1 for non-border
 
-        self.step_length = args.step_length  # Number of hours per pred. step
+        self.step_length = step_length  # Number of hours per pred. step
         self.val_metrics = {
             "rmse": [],
         }
@@ -81,14 +102,14 @@ class ARModel(pl.LightningModule):
             "rmse": [],
             "mae": [],
         }
-        if self.output_std:
+        if self.include_std_prediction:
             self.test_metrics["output_std"] = []  # Treat as metric
 
         # For making restoring of optimizer state optional (slight hack)
         self.opt_state = None
 
         # For example plotting
-        self.n_example_pred = args.n_example_pred
+        self.n_example_pred = n_example_pred
         self.plotted_examples = 0
 
         # For storing spatial loss maps during evaluation
@@ -162,7 +183,7 @@ class ARModel(pl.LightningModule):
             )
 
             prediction_list.append(new_state)
-            if self.output_std:
+            if self.include_std_prediction:
                 pred_std_list.append(pred_std)
 
             # Update conditioning states
@@ -172,7 +193,7 @@ class ARModel(pl.LightningModule):
         prediction = torch.stack(
             prediction_list, dim=1
         )  # (B, pred_steps, num_grid_nodes, d_f)
-        if self.output_std:
+        if self.include_std_prediction:
             pred_std = torch.stack(
                 pred_std_list, dim=1
             )  # (B, pred_steps, num_grid_nodes, d_f)
@@ -325,7 +346,7 @@ class ARModel(pl.LightningModule):
             )  # (B, pred_steps, d_f)
             self.test_metrics[metric_name].append(batch_metric_vals)
 
-        if self.output_std:
+        if self.include_std_prediction:
             # Store output std. per variable, spatially averaged
             mean_pred_std = torch.mean(
                 pred_std[..., self.interior_mask_bool, :], dim=-2
