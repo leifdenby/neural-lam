@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 import torch_geometric as pyg
 
 # First-party
-from neural_lam import utils
+from neural_lam import config, utils
 
 MESH_HEIGHT = 0.1
 MESH_LEVEL_DIST = 0.2
@@ -20,10 +20,10 @@ def main():
     """
     parser = ArgumentParser(description="Plot graph")
     parser.add_argument(
-        "--dataset",
+        "--data_config",
         type=str,
-        default="meps_example",
-        help="Datast to load grid coordinates from (default: meps_example)",
+        default="neural_lam/data_config.yaml",
+        help="Path to data config file (default: neural_lam/data_config.yaml)",
     )
     parser.add_argument(
         "--graph",
@@ -44,6 +44,11 @@ def main():
     )
 
     args = parser.parse_args()
+    data_config = config.Config.from_file(args.data_config)
+    xy = data_config.get_xy("state")  # (2, N_y, N_x)
+    xy = xy.reshape(2, -1).T  # (N_grid, 2)
+    pos_max = np.max(np.abs(xy))
+    grid_pos = xy / pos_max  # Divide by maximum coordinate
 
     # Load graph data
     hierarchical, graph_ldict = utils.load_graph(args.graph)
@@ -58,12 +63,6 @@ def main():
     )
     mesh_static_features = graph_ldict["mesh_static_features"]
 
-    grid_static_features = utils.load_static_data(args.dataset)[
-        "grid_static_features"
-    ]
-
-    # Extract values needed, turn to numpy
-    grid_pos = grid_static_features[:, :2].numpy()
     # Add in z-dimension
     z_grid = GRID_HEIGHT * np.ones((grid_pos.shape[0],))
     grid_pos = np.concatenate(

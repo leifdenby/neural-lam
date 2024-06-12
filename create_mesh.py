@@ -12,6 +12,9 @@ import torch
 import torch_geometric as pyg
 from torch_geometric.utils.convert import from_networkx
 
+# First-party
+from neural_lam import config
+
 
 def plot_graph(graph, title=None):
     fig, axis = plt.subplots(figsize=(8, 8), dpi=200)  # W,H
@@ -149,13 +152,13 @@ def prepend_node_index(graph, new_index):
     return networkx.relabel_nodes(graph, to_mapping, copy=True)
 
 
-def main():
-    parser = ArgumentParser(description="Graph genreation arguments")
+def main(input_args=None):
+    parser = ArgumentParser(description="Graph generation arguments")
     parser.add_argument(
-        "--dataset",
+        "--data_config",
         type=str,
-        default="meps_example",
-        help="Dataset to load grid point coordinates from (default: meps_example)",
+        default="neural_lam/data_config.yaml",
+        help="Path to data config file (default: neural_lam/data_config.yaml)",
     )
     parser.add_argument(
         "--graph",
@@ -181,15 +184,14 @@ def main():
         default=0,
         help="Generate hierarchical mesh graph (default: 0, no)",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(input_args)
 
     # Load grid positions
-    static_dir_path = os.path.join("data", args.dataset, "static")
+    data_config = config.Config.from_file(args.data_config)
     graph_dir_path = os.path.join("graphs", args.graph)
     os.makedirs(graph_dir_path, exist_ok=True)
 
-    xy = np.load(os.path.join(static_dir_path, "nwp_xy.npy"))
-
+    xy = data_config.get_xy("static")  # (2, N_y, N_x)
     grid_xy = torch.tensor(xy)
     pos_max = torch.max(torch.abs(grid_xy))
 
