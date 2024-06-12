@@ -2,6 +2,7 @@
 import functools
 import os
 from pathlib import Path
+from dataclasses import dataclass
 
 # Third-party
 import cartopy.crs as ccrs
@@ -10,6 +11,39 @@ import pandas as pd
 import torch
 import xarray as xr
 import yaml
+from annotated_types import Annotated, Len
+
+@dataclass
+class MultiZarrDataConfig:
+
+
+@dataclass
+class BaseDataStorage:
+    """
+    Class to store the data for the neural network.
+
+    Attributes
+    ----------
+    grid_shape_state: tuple
+        The shape of the grid for the state dataset (nx, ny)
+    step_length: int
+        The step length of the dataset in hours
+    coords_projection: ccrs.Projection
+        The projection object for the coordinates
+    xy_coords: np.ndarray
+        The x, y coordinates of the dataset
+    """
+    grid_shape_state: Annotated[tuple, Len(2)]
+    step_length: int
+    coords_projection: ccrs.Projection
+    num_data_vars: dict
+    vars_names: dict
+    vars_units: dict
+    
+    
+
+class MultiZarrDataStorage(BaseDataStorage):
+    def __init__(self, config):
 
 
 class Config:

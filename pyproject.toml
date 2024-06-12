@@ -72,7 +72,7 @@ dev = [
     "pre-commit>=3.7.0",
     "ipdb>=0.13.13",
     "pytest>=8.1.1",
-    "-e file:///home/leif/git-repos/dmi/mllam/weather-model-graphs#egg=weather-model-graphs",
+    "rich>=13.7.1",
 ]
 [project]
 name = "neural-lam"
@@ -104,6 +104,8 @@ dependencies = [
     "xarray>=2024.3.0",
     "zarr>=2.17.2",
     "dask>=2024.4.2",
+    "pydantic>=2.7.4",
+    "dataclass-wizard>=0.22.3",
 ]
 requires-python = ">=3.10"
 readme = "README.md"
