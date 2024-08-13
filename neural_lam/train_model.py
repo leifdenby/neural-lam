@@ -160,8 +160,19 @@ def main(input_args=None):
         default="wmse",
         help="Loss function to use, see metric.py (default: wmse)",
     )
+
+    def _float_or_find(value):
+        if value == "find":
+            # placeholder that will be replaced by the learning rate finder
+            return value
+
+        return float(value)
+
     parser.add_argument(
-        "--lr", type=float, default=1e-3, help="learning rate (default: 0.001)"
+        "--lr",
+        type=_float_or_find,
+        default=1e-3,
+        help="learning rate (default: 0.001)",
     )
     parser.add_argument(
         "--val_interval",
@@ -270,10 +281,48 @@ def main(input_args=None):
         device_name = "cpu"
 
     # Load model parameters Use new args for model
+    # make a copy of args without the `lr` argument
+
+    lr = args.lr
+    delattr(args, "lr")
+
+    find_lr = False
+    if lr == "find":
+        find_lr = True
+        lr = 1.0e-4
+
     ModelClass = MODELS[args.model]
     model = ModelClass(
-        args, datastore=datastore, forcing_window_size=args.forcing_window_size
+        args,
+        lr=lr,
+        datastore=datastore,
+        forcing_window_size=args.forcing_window_size,
     )
+
+    if find_lr:
+        # Third-party
+        import wandb
+        from pytorch_lightning.tuner.tuning import Tuner
+
+        # make iso8601 timestamp based timestamp without colons so that it can
+        # be used as a filename
+        timestamp = time.strftime("%Y%m%dT%H%M%S")
+        wandb.init(project=args.wandb_project, name="lr_finder", config=args)
+        trainer = pl.Trainer(
+            devices=[2, 3], max_epochs=1, precision=args.precision
+        )
+        tuner = Tuner(trainer=trainer)
+        lr_finder = tuner.lr_find(
+            model, datamodule=data_module, min_lr=1e-12, max_lr=1
+        )
+        # Plot with
+        fig = lr_finder.plot(suggest=True)
+        fig.show()
+        fn = f"lr_finder_{timestamp}.png"
+        fig.savefig(fn)
+        print(f"Saved lr finder plot to {fn}")
+        print(lr_finder.suggestion())
+        args.lr = lr_finder.suggestion()
 
     if args.eval:
         prefix = f"eval-{args.eval}-"
@@ -303,7 +352,11 @@ def main(input_args=None):
         callbacks=[checkpoint_callback],
         check_val_every_n_epoch=args.val_interval,
         precision=args.precision,
+        devices=1,
     )
+
+    if not find_lr:
+        raise Exception("Find LR failed")
 
     # Only init once, on rank 0 only
     if trainer.global_rank == 0:

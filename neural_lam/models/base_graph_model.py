@@ -11,9 +11,12 @@ class BaseGraphModel(ARModel):
     """Base (abstract) class for graph-based models building on the encode-
     process- decode idea."""
 
-    def __init__(self, args, datastore, forcing_window_size):
+    def __init__(self, args, lr, datastore, forcing_window_size):
         super().__init__(
-            args, datastore=datastore, forcing_window_size=forcing_window_size
+            args,
+            lr=lr,
+            datastore=datastore,
+            forcing_window_size=forcing_window_size,
         )
 
         # Load graph with static features

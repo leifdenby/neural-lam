@@ -27,6 +27,7 @@ dependencies = [
     "parse>=1.20.2",
     "dataclass-wizard>=0.22.3",
     "mllam-data-prep[dask-distributed]>=0.3.0",
+    "torch-lr-finder>=0.2.1",
 ]
 requires-python = ">=3.9"
 
