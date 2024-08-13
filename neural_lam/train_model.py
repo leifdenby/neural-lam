@@ -283,46 +283,20 @@ def main(input_args=None):
     # Load model parameters Use new args for model
     # make a copy of args without the `lr` argument
 
-    lr = args.lr
+    train_kwargs = dict(
+        lr=args.lr,
+        max_epochs=args.epochs,
+    )
     delattr(args, "lr")
-
-    find_lr = False
-    if lr == "find":
-        find_lr = True
-        lr = 1.0e-4
+    delattr(args, "epochs")
 
     ModelClass = MODELS[args.model]
     model = ModelClass(
         args,
-        lr=lr,
         datastore=datastore,
         forcing_window_size=args.forcing_window_size,
+        **train_kwargs,
     )
-
-    if find_lr:
-        # Third-party
-        import wandb
-        from pytorch_lightning.tuner.tuning import Tuner
-
-        # make iso8601 timestamp based timestamp without colons so that it can
-        # be used as a filename
-        timestamp = time.strftime("%Y%m%dT%H%M%S")
-        wandb.init(project=args.wandb_project, name="lr_finder", config=args)
-        trainer = pl.Trainer(
-            devices=[2, 3], max_epochs=1, precision=args.precision
-        )
-        tuner = Tuner(trainer=trainer)
-        lr_finder = tuner.lr_find(
-            model, datamodule=data_module, min_lr=1e-12, max_lr=1
-        )
-        # Plot with
-        fig = lr_finder.plot(suggest=True)
-        fig.show()
-        fn = f"lr_finder_{timestamp}.png"
-        fig.savefig(fn)
-        print(f"Saved lr finder plot to {fn}")
-        print(lr_finder.suggestion())
-        args.lr = lr_finder.suggestion()
 
     if args.eval:
         prefix = f"eval-{args.eval}-"
@@ -342,21 +316,20 @@ def main(input_args=None):
     logger = pl.loggers.WandbLogger(
         project=args.wandb_project, name=run_name, config=args
     )
+    lr_monitor = pl.callbacks.LearningRateMonitor(logging_interval="step")
+    checkpoint_callback = pl.callbacks.ModelCheckpoint(every_n_train_steps=100)
+
     trainer = pl.Trainer(
-        max_epochs=args.epochs,
         deterministic=True,
         strategy="ddp",
         accelerator=device_name,
         logger=logger,
         log_every_n_steps=1,
-        callbacks=[checkpoint_callback],
+        callbacks=[checkpoint_callback, lr_monitor, checkpoint_callback],
         check_val_every_n_epoch=args.val_interval,
         precision=args.precision,
-        devices=1,
+        max_epochs=train_kwargs["max_epochs"],
     )
-
-    if not find_lr:
-        raise Exception("Find LR failed")
 
     # Only init once, on rank 0 only
     if trainer.global_rank == 0:

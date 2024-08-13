@@ -23,10 +23,16 @@ class ARModel(pl.LightningModule):
     # Disable to override args/kwargs from superclass
 
     def __init__(
-        self, args, lr, datastore: BaseDatastore, forcing_window_size: int
+        self,
+        args,
+        lr,
+        max_epochs,
+        datastore: BaseDatastore,
+        forcing_window_size: int,
     ):
         super().__init__()
         self.lr = lr
+        self.max_epochs = max_epochs
         self.save_hyperparameters(ignore=["datastore"])
         self.args = args
         self._datastore = datastore
@@ -137,11 +143,21 @@ class ARModel(pl.LightningModule):
         self.spatial_loss_maps = []
 
     def configure_optimizers(self):
-        print(f"lr: {self.lr}")
-        opt = torch.optim.AdamW(
-            self.parameters(), lr=self.lr, betas=(0.9, 0.95)
+        # print(f"lr: {self.lr}")
+        # opt = torch.optim.AdamW(
+        #     self.parameters(), lr=self.lr, betas=(0.9, 0.95)
+        # )
+        # return opt
+
+        optimizer = torch.optim.AdamW(
+            self.parameters(), lr=self.hparams.lr, weight_decay=1.0e-4
         )
-        return opt
+        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=self.hparams.max_epochs,
+            eta_min=self.hparams.lr / 50,
+        )
+        return [optimizer], [lr_scheduler]
 
     @property
     def interior_mask_bool(self):
