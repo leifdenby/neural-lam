@@ -1,5 +1,6 @@
 # Third-party
 import matplotlib.pyplot as plt
+from loguru import logger
 
 # Local
 from . import DATASTORES, init_datastore
@@ -88,7 +89,8 @@ def plot_example_from_datastore(
     return g.fig
 
 
-if __name__ == "__main__":
+@logger.catch
+def cli(args=None):
     # Standard library
     import argparse
 
@@ -187,3 +189,7 @@ if __name__ == "__main__":
         index_selection=index_selection,
     )
     plt.show()
+
+
+if __name__ == "__main__":
+    cli()

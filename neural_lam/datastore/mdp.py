@@ -75,9 +75,14 @@ class MDPDatastore(BaseRegularGridDatastore):
 
         rank_zero_print("The loaded datastore contains the following features:")
         for category in ["state", "forcing", "static"]:
-            if len(self.get_vars_names(category)) > 0:
-                var_names = self.get_vars_names(category)
-                rank_zero_print(f" {category:<8s}: {' '.join(var_names)}")
+            try:
+                # TODO: need to ensure that we want to allow for empty
+                # categories
+                if len(self.get_vars_names(category)) > 0:
+                    var_names = self.get_vars_names(category)
+                    rank_zero_print(f" {category:<8s}: {' '.join(var_names)}")
+            except KeyError:
+                rank_zero_print(f" {category:<8s}: no data found")
 
         # check that all three train/val/test splits are available
         required_splits = ["train", "val", "test"]
