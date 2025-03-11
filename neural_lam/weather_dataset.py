@@ -13,6 +13,110 @@ import xarray as xr
 from neural_lam.datastore.base import BaseDatastore
 
 
+def create_dataarray_from_tensor(
+    datastore: BaseDatastore,
+    tensor: torch.Tensor,
+    time: Union[datetime.datetime, list[datetime.datetime]],
+    category: str,
+    split: str,
+):
+    """
+    Construct a xarray.DataArray from a `pytorch.Tensor` with coordinates
+    for `grid_index`, `time` and `{category}_feature` matching the shape
+    and number of times provided and add the x/y coordinates from the
+    datastore.
+
+    The number if times provided is expected to match the shape of the
+    tensor. For a 2D tensor, the dimensions are assumed to be (grid_index,
+    {category}_feature) and only a single time should be provided. For a 3D
+    tensor, the dimensions are assumed to be (time, grid_index,
+    {category}_feature) and a list of times should be provided.
+
+    Parameters
+    ----------
+    tensor : torch.Tensor
+        The tensor to construct the DataArray from, this assumed to have
+        the same dimension ordering as returned by the __getitem__ method
+        (i.e. time, grid_index, {category}_feature). The tensor will be
+        copied to the CPU before constructing the DataArray.
+    time : datetime.datetime or list[datetime.datetime] or torch.Tensor[Int]
+           (representing unix timestamps)
+        The time index or indices for the data, given either as datetime
+        object(s) or as integer(s) representing epoch time in nanoseconds. If
+        ints are provided they will be copied to the CPU memory if they are not
+        already there.
+    category : str
+        The category of the tensor, either "state", "forcing" or "static".
+    split : str
+        The split of the dataset that the tensor belongs to, e.g. "train",
+        "val" or "test".
+
+    Returns
+    -------
+    da : xr.DataArray
+        The constructed DataArray.
+    """
+    if isinstance(time, torch.Tensor):
+        time = np.array(time.cpu(), dtype="datetime64[ns]")
+
+    def _is_listlike(obj):
+        # match list, tuple, numpy array
+        return hasattr(obj, "__iter__") and not isinstance(obj, str)
+
+    add_time_as_dim = False
+    if len(tensor.shape) == 2:
+        dims = ["grid_index", f"{category}_feature"]
+        if _is_listlike(time):
+            raise ValueError(
+                "Expected a single time for a 2D tensor with assumed "
+                "dimensions (grid_index, {category}_feature), but got "
+                f"{len(time)} times"
+            )
+    elif len(tensor.shape) == 3:
+        add_time_as_dim = True
+        dims = ["time", "grid_index", f"{category}_feature"]
+        if not _is_listlike(time):
+            raise ValueError(
+                "Expected a list of times for a 3D tensor with assumed "
+                "dimensions (time, grid_index, {category}_feature), but "
+                "got a single time"
+            )
+    else:
+        raise ValueError(
+            "Expected tensor to have 2 or 3 dimensions, but got "
+            f"{len(tensor.shape)}"
+        )
+
+    da_datastore_state = datastore.get_dataarray(category=category, split=split)
+    da_grid_index = da_datastore_state.grid_index
+    da_state_feature = da_datastore_state.state_feature
+
+    coords = {
+        f"{category}_feature": da_state_feature,
+        "grid_index": da_grid_index,
+    }
+    if add_time_as_dim:
+        coords["time"] = time
+
+    da = xr.DataArray(
+        tensor.cpu().numpy(),
+        dims=dims,
+        coords=coords,
+    )
+
+    for grid_coord in ["x", "y"]:
+        if (
+            grid_coord in da_datastore_state.coords
+            and grid_coord not in da.coords
+        ):
+            da.coords[grid_coord] = da_datastore_state[grid_coord]
+
+    if not add_time_as_dim:
+        da.coords["time"] = time
+
+    return da
+
+
 class WeatherDataset(torch.utils.data.Dataset):
     """Dataset class for weather data.
 
@@ -505,99 +609,6 @@ class WeatherDataset(torch.utils.data.Dataset):
         """
         for i in range(len(self)):
             yield self[i]
-
-    def create_dataarray_from_tensor(
-        self,
-        tensor: torch.Tensor,
-        time: Union[datetime.datetime, list[datetime.datetime]],
-        category: str,
-    ):
-        """
-        Construct a xarray.DataArray from a `pytorch.Tensor` with coordinates
-        for `grid_index`, `time` and `{category}_feature` matching the shape
-        and number of times provided and add the x/y coordinates from the
-        datastore.
-
-        The number if times provided is expected to match the shape of the
-        tensor. For a 2D tensor, the dimensions are assumed to be (grid_index,
-        {category}_feature) and only a single time should be provided. For a 3D
-        tensor, the dimensions are assumed to be (time, grid_index,
-        {category}_feature) and a list of times should be provided.
-
-        Parameters
-        ----------
-        tensor : torch.Tensor
-            The tensor to construct the DataArray from, this assumed to have
-            the same dimension ordering as returned by the __getitem__ method
-            (i.e. time, grid_index, {category}_feature). The tensor will be
-            copied to the CPU before constructing the DataArray.
-        time : datetime.datetime or list[datetime.datetime]
-            The time or times of the tensor.
-        category : str
-            The category of the tensor, either "state", "forcing" or "static".
-
-        Returns
-        -------
-        da : xr.DataArray
-            The constructed DataArray.
-        """
-
-        def _is_listlike(obj):
-            # match list, tuple, numpy array
-            return hasattr(obj, "__iter__") and not isinstance(obj, str)
-
-        add_time_as_dim = False
-        if len(tensor.shape) == 2:
-            dims = ["grid_index", f"{category}_feature"]
-            if _is_listlike(time):
-                raise ValueError(
-                    "Expected a single time for a 2D tensor with assumed "
-                    "dimensions (grid_index, {category}_feature), but got "
-                    f"{len(time)} times"
-                )
-        elif len(tensor.shape) == 3:
-            add_time_as_dim = True
-            dims = ["time", "grid_index", f"{category}_feature"]
-            if not _is_listlike(time):
-                raise ValueError(
-                    "Expected a list of times for a 3D tensor with assumed "
-                    "dimensions (time, grid_index, {category}_feature), but "
-                    "got a single time"
-                )
-        else:
-            raise ValueError(
-                "Expected tensor to have 2 or 3 dimensions, but got "
-                f"{len(tensor.shape)}"
-            )
-
-        da_datastore_state = getattr(self, f"da_{category}")
-        da_grid_index = da_datastore_state.grid_index
-        da_state_feature = da_datastore_state.state_feature
-
-        coords = {
-            f"{category}_feature": da_state_feature,
-            "grid_index": da_grid_index,
-        }
-        if add_time_as_dim:
-            coords["time"] = time
-
-        da = xr.DataArray(
-            tensor.cpu().numpy(),
-            dims=dims,
-            coords=coords,
-        )
-
-        for grid_coord in ["x", "y"]:
-            if (
-                grid_coord in da_datastore_state.coords
-                and grid_coord not in da.coords
-            ):
-                da.coords[grid_coord] = da_datastore_state[grid_coord]
-
-        if not add_time_as_dim:
-            da.coords["time"] = time
-
-        return da
 
 
 class WeatherDataModule(pl.LightningDataModule):

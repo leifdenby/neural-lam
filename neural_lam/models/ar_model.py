@@ -454,132 +454,6 @@ class ARModel(pl.LightningModule):
                 split="test",
             )
 
-    def plot_examples(self, batch, n_examples, split, prediction=None):
-        """
-        Plot the first n_examples forecasts from batch
-
-        batch: batch with data to plot corresponding forecasts for n_examples:
-        number of forecasts to plot prediction: (B, pred_steps, num_grid_nodes,
-        d_f), existing prediction.
-            Generate if None.
-        """
-        if prediction is None:
-            prediction, target, _, _ = self.common_step(batch)
-
-        target = batch[1]
-        time = batch[3]
-
-        # Rescale to original data scale
-        prediction_rescaled = prediction * self.state_std + self.state_mean
-        target_rescaled = target * self.state_std + self.state_mean
-
-        # Iterate over the examples
-        for pred_slice, target_slice, time_slice in zip(
-            prediction_rescaled[:n_examples],
-            target_rescaled[:n_examples],
-            time[:n_examples],
-        ):
-            # Each slice is (pred_steps, num_grid_nodes, d_f)
-            self.plotted_examples += 1  # Increment already here
-
-            da_prediction = self._create_dataarray_from_tensor(
-                tensor=pred_slice,
-                time=time_slice,
-                split=split,
-                category="state",
-            ).unstack("grid_index")
-            da_target = self._create_dataarray_from_tensor(
-                tensor=target_slice,
-                time=time_slice,
-                split=split,
-                category="state",
-            ).unstack("grid_index")
-
-            var_vmin = (
-                torch.minimum(
-                    pred_slice.flatten(0, 1).min(dim=0)[0],
-                    target_slice.flatten(0, 1).min(dim=0)[0],
-                )
-                .cpu()
-                .numpy()
-            )  # (d_f,)
-            var_vmax = (
-                torch.maximum(
-                    pred_slice.flatten(0, 1).max(dim=0)[0],
-                    target_slice.flatten(0, 1).max(dim=0)[0],
-                )
-                .cpu()
-                .numpy()
-            )  # (d_f,)
-            var_vranges = list(zip(var_vmin, var_vmax))
-
-            # Iterate over prediction horizon time steps
-            for t_i, _ in enumerate(zip(pred_slice, target_slice), start=1):
-                # Create one figure per variable at this time step
-                var_figs = [
-                    vis.plot_prediction(
-                        datastore=self._datastore,
-                        title=f"{var_name} ({var_unit}), "
-                        f"t={t_i} ({self._datastore.step_length * t_i} h)",
-                        vrange=var_vrange,
-                        da_prediction=da_prediction.isel(
-                            state_feature=var_i, time=t_i - 1
-                        ).squeeze(),
-                        da_target=da_target.isel(
-                            state_feature=var_i, time=t_i - 1
-                        ).squeeze(),
-                    )
-                    for var_i, (var_name, var_unit, var_vrange) in enumerate(
-                        zip(
-                            self._datastore.get_vars_names("state"),
-                            self._datastore.get_vars_units("state"),
-                            var_vranges,
-                        )
-                    )
-                ]
-
-                example_i = self.plotted_examples
-
-                for var_name, fig in zip(
-                    self._datastore.get_vars_names("state"), var_figs
-                ):
-
-                    # We need treat logging images differently for different
-                    # loggers. WANDB can log multiple images to the same key,
-                    # while other loggers, as MLFlow, need unique keys for
-                    # each image.
-                    if isinstance(self.logger, pl.loggers.WandbLogger):
-                        key = f"{var_name}_example_{example_i}"
-                    else:
-                        key = f"{var_name}_example"
-
-                    if hasattr(self.logger, "log_image"):
-                        self.logger.log_image(key=key, images=[fig], step=t_i)
-                    else:
-                        warnings.warn(
-                            f"{self.logger} does not support image logging."
-                        )
-
-                plt.close(
-                    "all"
-                )  # Close all figs for this time step, saves memory
-
-            # Save pred and target as .pt files
-            torch.save(
-                pred_slice.cpu(),
-                os.path.join(
-                    self.logger.save_dir,
-                    f"example_pred_{self.plotted_examples}.pt",
-                ),
-            )
-            torch.save(
-                target_slice.cpu(),
-                os.path.join(
-                    self.logger.save_dir,
-                    f"example_target_{self.plotted_examples}.pt",
-                ),
-            )
-
     def create_metric_log_dict(self, metric_tensor, prefix, metric_name):
         """
         Put together a dict with everything to log for one metric. Also saves
@@ -592,7 +466,7 @@ class ARModel(pl.LightningModule):
         Return: log_dict: dict with everything to log for given metric
         """
         log_dict = {}
-        metric_fig = vis.plot_error_map(
+        metric_fig = vis.plot_feature_error_with_rollout(
             errors=metric_tensor,
             datastore=self._datastore,
         )

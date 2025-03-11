@@ -10,7 +10,9 @@ from .datastore.base import BaseRegularGridDatastore
 
 
 @matplotlib.rc_context(utils.fractional_plot_bundle(1))
-def plot_error_map(errors, datastore: BaseRegularGridDatastore, title=None):
+def plot_feature_error_with_rollout(
+    errors, datastore: BaseRegularGridDatastore, title=None
+):
     """
     Plot a heatmap of errors of different variables at different
     predictions horizons

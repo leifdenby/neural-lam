@@ -14,6 +14,7 @@ from loguru import logger
 # Local
 from . import utils
 from .config import load_config_and_datastore
+from .forecaster_module import MetricWatchShorthand
 from .models import GraphLAM, HiLAM, HiLAMParallel
 from .weather_dataset import WeatherDataModule
 
@@ -205,15 +206,11 @@ def main(input_args=None):
     parser.add_argument(
         "--metrics_watch",
         nargs="+",
+        type=MetricWatchShorthand,
         default=[],
-        help="List of metrics to watch, including any prefix (e.g. val_rmse)",
-    )
-    parser.add_argument(
-        "--var_leads_metrics_watch",
-        type=str,
-        default="{}",
-        help="""JSON string with variable-IDs and lead times to log watched
-             metrics (e.g. '{"1": [1, 2], "3": [3, 4]}')""",
+        help="List of metrics to watch, including any prefix (e.g. val_rmse=1 to "
+        "watch rmse during the val-split execution at step roll-out step 1, or "
+        "train_mse=1,2,3 to watch mse during the train-split execution",
     )
     parser.add_argument(
         "--num_past_forcing_steps",
@@ -231,6 +228,54 @@ def main(input_args=None):
     args.var_leads_metrics_watch = {
         int(k): v for k, v in json.loads(args.var_leads_metrics_watch).items()
     }
+
+    # Standard library
+    import dataclasses
+
+    @dataclasses.dataclass
+    class ForecasterConfig:
+        """
+        Configuration for the Forecaster model.
+
+        Parameters
+        ----------
+        input_dim: int
+            The input dimension of the model.
+        output_dim: int
+            The output dimension of the model.
+        hidden_dim: int
+            The hidden dimension of the model.
+        processor_layers: int
+            The number of layers in the processor GNN.
+
+
+        """
+
+        hidden_layers: int
+        processor_layers: int
+        hidden_dim: int
+
+    @dataclasses.dataclass
+    class TrainingConfig:
+        """
+        Configuration for the training of the model.
+
+        Parameters
+        ----------
+        epochs: int
+            The number of epochs to train the model.
+        batch_size: int
+            The batch size to use for training.
+        lr: float
+            The learning rate to use for training.
+        val_interval: int
+            The number of epochs between each validation run.
+        """
+
+        epochs: int
+        batch_size: int
+        lr: float
+        val_interval: int
 
     # Asserts for arguments
     assert (
