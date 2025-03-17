@@ -3,15 +3,17 @@ import torch
 from loguru import logger
 
 # Local
-from ..step_prediction import PersistanceStepPredictor
+from ..step_predictor import BaseStepPredictor, PersistanceStepPredictor
 from .base import BaseForecaster
 
 
-class ARForecastor(BaseForecaster):
+class ARForecaster(BaseForecaster):
     """
     Subclass of Forecaster that uses an auto-regressive strategy to unroll a
     forecast. Makes use of a StepPredictor at each AR step.
     """
+
+    _step_predictor: BaseStepPredictor
 
     def __init__(self, num_prediction_steps):
         logger.warning("Using persistance step predictor for now")

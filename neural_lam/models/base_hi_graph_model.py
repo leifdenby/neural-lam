@@ -1,3 +1,6 @@
+# Standard library
+import abc
+
 # Third-party
 from torch import nn
 
@@ -9,7 +12,7 @@ from ..interaction_net import InteractionNet
 from .base_graph_model import BaseGraphModel
 
 
-class BaseHiGraphModel(BaseGraphModel):
+class BaseHiGraphModel(BaseGraphModel, abc.ABC):
     """
     Base class for hierarchical graph models.
     """

@@ -6,7 +6,7 @@ import torch
 from torch import nn
 
 
-class StepPredictor(nn.Module, abc.ABC):
+class BaseStepPredictor(nn.Module, abc.ABC):
     """
     A model mapping from the two previous time steps + forcing + boundary
     forcing to a prediction of the next state. Corresponds to the function in
@@ -37,7 +37,7 @@ class StepPredictor(nn.Module, abc.ABC):
         raise NotImplementedError("No prediction step implemented")
 
 
-class PersistanceStepPredictor(StepPredictor):
+class PersistanceStepPredictor(BaseStepPredictor):
     """
     A simple forecaster that just repeats the last state as the forecast
     """

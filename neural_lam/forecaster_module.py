@@ -13,35 +13,9 @@ import xarray as xr
 from . import metrics, vis
 from .datastore import BaseDatastore
 from .loss_weighting import get_state_feature_weighting
-from .models.forecaster.base import ARForecastor
+from .models.forecaster.ar_forecaster import ARForecaster
+from .models.forecaster.base import BaseForecaster
 from .weather_dataset import create_dataarray_from_tensor
-
-
-@dataclasses.dataclass
-class ForecasterConfig:
-    input_dim: int
-    output_dim: int
-    hidden_dim: int
-    num_layers: int
-    num_past_forcing_steps: int
-    num_future_forcing_steps: int
-    loss_fn: str
-
-
-@dataclasses.dataclass
-class MetricWatchShorthand:
-    split: str
-    metric: str
-    var_name: str
-    ar_step: int
-    FORMAT = "{split}_{metric}_{var_name}_step_{ar_step}"
-
-    def __init__(self, s: str):
-        parsed = parse.parse(self.FORMAT, s)
-        self.split = parsed["split"]
-        self.metric = parsed["metric"]
-        self.var_name = parsed["var_name"]
-        self.ar_step = parsed["ar_step"]
 
 
 def expand_to_batch(x, batch_size):
@@ -56,8 +30,6 @@ class MetricTracking:
     """
     Track values of metrics over roll-out windows during training
     """
-
-    watched_metrics: List[MetricWatchShorthand]
 
     def create_metric_rollout_plot(
         self, metric_tensor, metric_plot_id, save_to_disk
@@ -172,6 +144,65 @@ class MetricTracking:
             plt.close("all")  # Close all figs
 
 
+@dataclass(frozen=True)
+class HeatmapConfig:
+    """Configuration for heatmap metrics, defining the data split and metric."""
+
+    STRING_FORMAT = "{split}:{metric}"
+    split: str
+    metric: str
+
+    @staticmethod
+    def from_string(s: str) -> "HeatmapConfig":
+        """Parses a heatmap configuration string into a HeatmapConfig object."""
+        result = parse(HeatmapConfig.STRING_FORMAT, s)
+        if not result:
+            raise ValueError(
+                f"Invalid heatmap config format: '{s}'. Expected format is {HeatmapConfig.STRING_FORMAT}."
+            )
+        return HeatmapConfig(**result)
+
+
+@dataclass(frozen=True)
+class TraceConfig:
+    """Configuration for trace metrics, defining the split, metric, variable, and timestep."""
+
+    STRING_FORMAT = "{split}:{metric}:{variable}:{step}"
+    split: str
+    variable: str
+    metric: str
+    step: int
+
+    @staticmethod
+    def from_string(s: str) -> "TraceConfig":
+        """Parses a trace configuration string into a TraceConfig object."""
+        result = parse(TraceConfig.STRING_FORMAT, s)
+        if not result:
+            raise ValueError(
+                f"Invalid trace config format: '{s}'. Expected format is {TraceConfig.STRING_FORMAT}."
+            )
+        return TraceConfig(**result)
+
+
+@dataclass(frozen=True)
+class MetricLoggingConfig:
+    """Container for heatmap and trace metric configurations."""
+
+    heatmaps: Set[HeatmapConfig]
+    traces: Set[TraceConfig]
+
+    @staticmethod
+    def from_args(
+        heatmaps: List[str], traces: List[str]
+    ) -> "MetricLoggingConfig":
+        """Creates a MetricLoggingConfig from command-line arguments."""
+        heatmap_configs = {HeatmapConfig.from_string(s) for s in heatmaps}
+        trace_configs = {TraceConfig.from_string(s) for s in traces}
+        return MetricLoggingConfig(
+            heatmaps=heatmap_configs, traces=trace_configs
+        )
+
+
 class ForecasterModule(pl.LightningModule):
     """
     Takes over much of the responsibility of the old ARModel. Handles things
@@ -184,10 +215,14 @@ class ForecasterModule(pl.LightningModule):
     entirely sure about this).
     """
 
+    LOGGED_METRIC_KEY_FORMAT = TraceConfig.STRING_FORMAT
+
+    _forecaster: BaseForecaster
+
     def __init__(
         self,
         args,
-        config: ForecasterConfig,
+        logging_config: MetricLoggingConfig,
         datastore: BaseDatastore,
     ):
         super().__init__()
@@ -205,11 +240,7 @@ class ForecasterModule(pl.LightningModule):
         # For making restoring of optimizer state optional
         self.restore_opt = args.restore_opt
 
-        self.forecaster = ARForecastor(
-            config=config,
-            datastore=datastore,
-            include_std=self._include_std,
-        )
+        self._logging_config = MetricLoggingConfig()
 
     def _register_buffers(self):
         # Load static features standardized
@@ -270,6 +301,39 @@ class ForecasterModule(pl.LightningModule):
         self.register_buffer(
             "interior_mask", 1.0 - self.boundary_mask, persistent=False
         )  # (num_grid_nodes, 1), 1 for non-border
+
+    def _setup_metrics(self):
+        """Initializes metrics based on the provided configurations."""
+        metrics = torch.nn.ModuleDict()
+
+        for cfg in self.config.traces:
+            if cfg.metric in METRIC_REGISTRY:
+                split_metrics = metrics.setdefault(
+                    cfg.split, torch.nn.ModuleDict()
+                )
+                key = self.LOGGED_METRIC_KEY_FORMAT.format(
+                    split=cfg.split,
+                    metric=cfg.metric,
+                    variable=cfg.variable,
+                    step=cfg.step,
+                )
+                split_metrics[key] = METRIC_REGISTRY[cfg.metric]()
+
+        for hm in self.config.heatmaps:
+            for var in self.variables:
+                for step in range(self.ar_steps):
+                    key = self.LOGGED_METRIC_KEY_FORMAT.format(
+                        split=hm.split,
+                        metric=hm.metric,
+                        variable=var,
+                        step=step,
+                    )
+                    split_metrics = metrics.setdefault(
+                        hm.split, torch.nn.ModuleDict()
+                    )
+                    split_metrics[key] = METRIC_REGISTRY[hm.metric]()
+
+        return metrics
 
     @cached_property
     def num_grid_nodes(self) -> int:
@@ -716,134 +780,6 @@ def plot_examples(batch, n_examples, split, prediction=None):
             ),
         )
 
-
-# Standard library
-import argparse
-from dataclasses import dataclass
-from typing import List, Set, Tuple
-
-# Third-party
-import matplotlib.pyplot as plt
-import pytorch_lightning as pl
-import torch
-import torch.nn.functional as F
-import xarray as xr
-from parse import parse
-from torchmetrics import METRIC_REGISTRY
-
-
-@dataclass(frozen=True)
-class HeatmapConfig:
-    """Configuration for heatmap metrics, defining the data split and metric."""
-
-    STRING_FORMAT = "{split}:{metric}"
-    split: str
-    metric: str
-
-    @staticmethod
-    def from_string(s: str) -> "HeatmapConfig":
-        """Parses a heatmap configuration string into a HeatmapConfig object."""
-        result = parse(HeatmapConfig.STRING_FORMAT, s)
-        if not result:
-            raise ValueError(
-                f"Invalid heatmap config format: '{s}'. Expected format is {HeatmapConfig.STRING_FORMAT}."
-            )
-        return HeatmapConfig(**result)
-
-
-@dataclass(frozen=True)
-class TraceConfig:
-    """Configuration for trace metrics, defining the split, metric, variable, and timestep."""
-
-    STRING_FORMAT = "{split}:{metric}:{variable}:{step}"
-    split: str
-    variable: str
-    metric: str
-    step: int
-
-    @staticmethod
-    def from_string(s: str) -> "TraceConfig":
-        """Parses a trace configuration string into a TraceConfig object."""
-        result = parse(TraceConfig.STRING_FORMAT, s)
-        if not result:
-            raise ValueError(
-                f"Invalid trace config format: '{s}'. Expected format is {TraceConfig.STRING_FORMAT}."
-            )
-        return TraceConfig(**result)
-
-
-@dataclass(frozen=True)
-class MetricLoggingConfig:
-    """Container for heatmap and trace metric configurations."""
-
-    heatmaps: Set[HeatmapConfig]
-    traces: Set[TraceConfig]
-
-    @staticmethod
-    def from_args(
-        heatmaps: List[str], traces: List[str]
-    ) -> "MetricLoggingConfig":
-        """Creates a MetricLoggingConfig from command-line arguments."""
-        heatmap_configs = {HeatmapConfig.from_string(s) for s in heatmaps}
-        trace_configs = {TraceConfig.from_string(s) for s in traces}
-        return MetricLoggingConfig(
-            heatmaps=heatmap_configs, traces=trace_configs
-        )
-
-
-class MyModel(pl.LightningModule):
-    """PyTorch Lightning model for metric logging with trace and heatmap visualization."""
-
-    LOGGED_METRIC_KEY_FORMAT = TraceConfig.STRING_FORMAT
-
-    def __init__(
-        self, config: MetricLoggingConfig, ar_steps: int, variables: List[str]
-    ):
-        """Initializes the model with metric configurations, auto-regressive steps, and variables."""
-        super().__init__()
-        self.config = config
-        self.ar_steps = ar_steps
-        self.variables = variables
-        self.layer = torch.nn.Linear(10, len(variables))
-        self.metrics = self._setup_metrics()
-
-    def _setup_metrics(self):
-        """Initializes metrics based on the provided configurations."""
-        metrics = torch.nn.ModuleDict()
-
-        for cfg in self.config.traces:
-            if cfg.metric in METRIC_REGISTRY:
-                split_metrics = metrics.setdefault(
-                    cfg.split, torch.nn.ModuleDict()
-                )
-                key = self.LOGGED_METRIC_KEY_FORMAT.format(
-                    split=cfg.split,
-                    metric=cfg.metric,
-                    variable=cfg.variable,
-                    step=cfg.step,
-                )
-                split_metrics[key] = METRIC_REGISTRY[cfg.metric]()
-
-        for hm in self.config.heatmaps:
-            for var in self.variables:
-                for step in range(self.ar_steps):
-                    key = self.LOGGED_METRIC_KEY_FORMAT.format(
-                        split=hm.split,
-                        metric=hm.metric,
-                        variable=var,
-                        step=step,
-                    )
-                    split_metrics = metrics.setdefault(
-                        hm.split, torch.nn.ModuleDict()
-                    )
-                    split_metrics[key] = METRIC_REGISTRY[hm.metric]()
-
-        return metrics
-
-    def forward(self, x):
-        """Performs a forward pass through the model."""
-        return self.layer(x)
-
     def _update_metrics(self, split, preds, targets):
         """Updates metric calculations for a given split."""
         for key, metric in self.metrics.get(split, {}).items():
@@ -926,41 +862,3 @@ class MyModel(pl.LightningModule):
     def on_test_epoch_end(self):
         """Logs metrics at the end of a test epoch."""
         self._log_metrics("test")
-
-    def configure_optimizers(self):
-        """Configures the optimizer for training."""
-        return torch.optim.Adam(self.parameters(), lr=1e-3)
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--heatmaps",
-        nargs="*",
-        default=[],
-        help="Heatmap configs as split:metric",
-    )
-    parser.add_argument(
-        "--traces",
-        nargs="*",
-        default=[],
-        help="Trace configs as split:metric:variable:step",
-    )
-    parser.add_argument(
-        "--variables",
-        nargs="*",
-        default=[],
-        help="List of variables to track in heatmaps",
-    )
-    parser.add_argument(
-        "--ar_steps",
-        type=int,
-        default=10,
-        help="Number of auto-regressive steps for heatmap",
-    )
-    args = parser.parse_args()
-
-    config = MetricLoggingConfig.from_args(args.heatmaps, args.traces)
-    model = MyModel(config, args.ar_steps, args.variables)
-
-    # Example training call would go here
