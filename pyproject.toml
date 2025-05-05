@@ -19,9 +19,7 @@ dependencies = [
     "scipy>=1.10.0",
     "pytorch-lightning>=2.0.3",
     "shapely>=2.0.1",
-    "networkx>=3.0",
     "Cartopy>=0.22.0",
-    "pyproj>=3.4.1",
     "tueplots>=0.0.8",
     "matplotlib>=3.7.0",
     "plotly>=5.15.0",
@@ -33,11 +31,18 @@ dependencies = [
     "mlflow>=2.16.2",
     "boto3>=1.35.32",
     "pynvml>=12.0.0",
+    "weather-model-graphs @ git+https://github.com/leifdenby/weather-model-graphs@feat/xr-datatree-output-format",
 ]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 
 [project.optional-dependencies]
-dev = ["pre-commit>=3.8.0", "pytest>=8.3.2", "pooch>=1.8.2"]
+dev = [
+    "pre-commit>=3.8.0",
+    "pytest>=8.3.2",
+    "pooch>=1.8.2",
+    "ipdb>=0.13.13",
+    "ipykernel>=6.29.5",
+]
 
 [tool.setuptools]
 py-modules = ["neural_lam"]
