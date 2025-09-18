@@ -108,6 +108,21 @@ class MDPDatastore(BaseRegularGridDatastore):
 
         self.CARTESIAN_COORDS = dim_order
 
+        if (
+            "analysis_time" in self._ds.dims
+            and "elapsed_forecast_duration" in self._ds.dims
+        ):
+            self.is_forecast = True
+        elif "time" in self._ds.dims:
+            self.is_forecast = False
+        else:
+            raise ValueError(
+                "No recognisable time dimension found in the dataset."
+                "Expected either ('time') for reanalysis data, or "
+                "('analysis_time', 'elapsed_forecast_duration') for "
+                "forecast data."
+            )
+
     @property
     def root_path(self) -> Path:
         """The root path of the dataset.
