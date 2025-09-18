@@ -374,11 +374,16 @@ class MDPDatastore(BaseRegularGridDatastore):
 
         """
         ds_unstacked = self.unstack_grid_coords(da_or_ds=self._ds)
-        da_state_variable = (
-            ds_unstacked["state"]
-            .isel({self.time_sampling_dim: 0})
-            .isel(state_feature=0)
-        )
+        da_state_variable = ds_unstacked["state"].isel(state_feature=0)
+        if self.is_forecast:
+            # pick the first analysis time and forecast lead time
+            da_state_variable = da_state_variable.isel(
+                analysis_time=0, elapsed_forecast_duration=0
+            )
+        else:
+            # pick the first time
+            da_state_variable = da_state_variable.isel(time=0)
+
         da_domain_allzero = xr.zeros_like(da_state_variable)
         ds_unstacked["boundary_mask"] = da_domain_allzero.isel(
             x=slice(self._n_boundary_points, -self._n_boundary_points),
