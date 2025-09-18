@@ -202,7 +202,7 @@ def main(input_args=None):
     )
     parser.add_argument(
         "--val_steps_to_log",
-        nargs="+",
+        nargs="*",
         type=int,
         default=[1, 2, 3, 5, 10, 15, 19],
         help="Steps to log val loss for (default: 1 2 3 5 10 15 19)",
