@@ -285,7 +285,9 @@ class MDPDatastore(BaseRegularGridDatastore):
                 .load()
                 .item()
             )
-            da_category = da_category.sel(time=slice(t_start, t_end))
+            da_category = da_category.sel(
+                {self.time_sampling_dim: slice(t_start, t_end)}
+            )
 
         dim_order = self.expected_dim_order(category=category)
         da_category = da_category.transpose(*dim_order)
@@ -358,7 +360,9 @@ class MDPDatastore(BaseRegularGridDatastore):
         """
         ds_unstacked = self.unstack_grid_coords(da_or_ds=self._ds)
         da_state_variable = (
-            ds_unstacked["state"].isel(time=0).isel(state_feature=0)
+            ds_unstacked["state"]
+            .isel({self.time_sampling_dim: 0})
+            .isel(state_feature=0)
         )
         da_domain_allzero = xr.zeros_like(da_state_variable)
         ds_unstacked["boundary_mask"] = da_domain_allzero.isel(

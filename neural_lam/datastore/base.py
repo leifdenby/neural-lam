@@ -586,3 +586,22 @@ class BaseRegularGridDatastore(BaseDatastore):
 
         """
         return self.grid_shape_state.x * self.grid_shape_state.y
+
+    @property
+    @functools.lru_cache
+    def time_sampling_dim(self) -> str:
+        """
+        Return the name of the time sampling dimension used in the datastore.
+        This is either "time" for analysis data or "analysis_time"
+        for forecast data.
+
+        Returns
+        -------
+        str
+            The name of the time sampling dimension.
+
+        """
+        if self.is_forecast:
+            return "analysis_time"
+        else:
+            return "time"
