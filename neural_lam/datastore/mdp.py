@@ -157,7 +157,17 @@ class MDPDatastore(BaseRegularGridDatastore):
             The length of the time steps in hours.
 
         """
-        da_dt = self._ds["time"].diff("time")
+        if not self.is_forecast:
+            da_dt = self._ds["time"].diff("time")
+        else:
+            # create a absolute time, so that we can compute the difference
+            # between forecast lead times
+            t0 = self._ds["analysis_time"].isel(analysis_time=0)
+            da_t = (t0 + self._ds["elapsed_forecast_duration"]).rename(
+                elapsed_forecast_duration="time"
+            )
+            da_dt = da_t.diff("time")
+
         total_sec = da_dt.dt.total_seconds().isel(time=0).astype(int)
         return (total_sec // 3600).item()
 
