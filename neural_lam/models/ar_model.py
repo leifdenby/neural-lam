@@ -418,7 +418,7 @@ class ARModel(pl.LightningModule):
                 da_pred = self._datastore.unstack_grid_coords(da_pred)
 
             t0 = da_pred.coords["time"].values[0]
-            da_pred.coords["start_time"] = t0
+            da_pred.coords["analysis_time"] = t0
             da_pred.coords["elapsed_forecast_duration"] = da_pred.time - t0
             da_pred = da_pred.swap_dims({"time": "elapsed_forecast_duration"})
             da_pred.name = "state"
@@ -439,7 +439,7 @@ class ARModel(pl.LightningModule):
         # can be correctly parsed/constructed
         for attr in ["long_name", "units"]:
             var_name = f"state_feature_{attr}"
-            da_pred.coords[var_name] = self._datastore._ds[var_name]
+            da_pred_batch.coords[var_name] = self._datastore._ds[var_name]
 
         if batch_idx == 0:
             logger.info(f"Saving predictions to {zarr_output_path}")
