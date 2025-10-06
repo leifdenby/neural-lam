@@ -69,14 +69,15 @@ class MDPDatastore(BaseRegularGridDatastore):
                 )
             self._ds = xr.open_zarr(fp_ds, consolidated=True)
 
+        if self._ds is None:
+            self._ds = mdp.create_dataset(config=self._config)
+            self._ds.to_zarr(fp_ds)
+
         # XXX: make decoding of MultiIndex be based on the mdp version
         self._ds = cfxr.decode_compress_to_multi_index(
             self._ds, idxnames="grid_index"
         )
 
-        if self._ds is None:
-            self._ds = mdp.create_dataset(config=self._config)
-            self._ds.to_zarr(fp_ds)
         self._n_boundary_points = n_boundary_points
 
         rank_zero_print("The loaded datastore contains the following features:")
