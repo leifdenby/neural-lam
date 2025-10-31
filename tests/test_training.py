@@ -44,7 +44,7 @@ def run_simple_training(datastore, set_output_std):
         # XXX: `devices` has to be set to 2 otherwise
         # neural_lam.models.ar_model.ARModel.aggregate_and_plot_metrics fails
         # because it expects to aggregate over multiple devices
-        devices=2,
+        devices=1,
         log_every_n_steps=1,
         # use `detect_anomaly` to ensure that we don't have NaNs popping up
         # during training
