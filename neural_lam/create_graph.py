@@ -138,7 +138,7 @@ def mk_2d_graph(xy, nx, ny):
     # turn into directed graph
     dg = networkx.DiGraph(g)
     for u, v in g.edges():
-        d = np.sqrt(np.sum((g.nodes[u]["pos"] - g.nodes[v]["pos"]) ** 2))
+        d = np.sqrt(np.sum((np.array(g.nodes[u]["pos"]) - np.array(g.nodes[v]["pos"])) ** 2))
         dg.edges[u, v]["len"] = d
         dg.edges[u, v]["vdiff"] = g.nodes[u]["pos"] - g.nodes[v]["pos"]
         dg.add_edge(v, u)
@@ -310,12 +310,12 @@ def create_graph(
                 G_down.add_edge(u, v)
                 d = np.sqrt(
                     np.sum(
-                        (G_down.nodes[u]["pos"] - G_down.nodes[v]["pos"]) ** 2
+                        (np.array(G_down.nodes[u]["pos"]) - np.array(G_down.nodes[v]["pos"])) ** 2
                     )
                 )
                 G_down.edges[u, v]["len"] = d
                 G_down.edges[u, v]["vdiff"] = (
-                    G_down.nodes[u]["pos"] - G_down.nodes[v]["pos"]
+                    np.array(G_down.nodes[u]["pos"]) - np.array(G_down.nodes[v]["pos"])
                 )
 
             # relabel nodes to integers (sorted)
@@ -429,7 +429,7 @@ def create_graph(
     vm_xy = np.array([xy for _, xy in vm.data("pos")])
     # distance between mesh nodes
     dm = np.sqrt(
-        np.sum((vm.data("pos")[(0, 1, 0)] - vm.data("pos")[(0, 0, 0)]) ** 2)
+        np.sum((np.array(vm.data("pos")[(0, 1, 0)]) - np.array(vm.data("pos")[(0, 0, 0)])) ** 2)
     )
 
     # grid nodes
@@ -477,11 +477,11 @@ def create_graph(
             # add edge from grid to mesh
             G_g2m.add_edge(u, v)
             d = np.sqrt(
-                np.sum((G_g2m.nodes[u]["pos"] - G_g2m.nodes[v]["pos"]) ** 2)
+                np.sum((np.array(G_g2m.nodes[u]["pos"]) - np.array(G_g2m.nodes[v]["pos"])) ** 2)
             )
             G_g2m.edges[u, v]["len"] = d
             G_g2m.edges[u, v]["vdiff"] = (
-                G_g2m.nodes[u]["pos"] - G_g2m.nodes[v]["pos"]
+                np.array(G_g2m.nodes[u]["pos"]) - np.array(G_g2m.nodes[v]["pos"])
             )
 
     pyg_g2m = from_networkx(G_g2m)
@@ -512,11 +512,11 @@ def create_graph(
             # add edge from mesh to grid
             G_m2g.add_edge(u, v)
             d = np.sqrt(
-                np.sum((G_m2g.nodes[u]["pos"] - G_m2g.nodes[v]["pos"]) ** 2)
+                np.sum((np.array(G_m2g.nodes[u]["pos"]) - np.array(G_m2g.nodes[v]["pos"])) ** 2)
             )
             G_m2g.edges[u, v]["len"] = d
             G_m2g.edges[u, v]["vdiff"] = (
-                G_m2g.nodes[u]["pos"] - G_m2g.nodes[v]["pos"]
+                np.array(G_m2g.nodes[u]["pos"]) - np.array(G_m2g.nodes[v]["pos"])
             )
 
     # relabel nodes to integers (sorted)
