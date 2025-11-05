@@ -121,7 +121,7 @@ source = "scm"
 fallback_version = "0.0.0"
 
 [tool.uv.sources]
-mllam-data-prep = { git = "https://github.com/leifdenby/mllam-data-prep", rev = "feat/inverse-ops" }
+mllam-data-prep = { git = "https://github.com/leifdenby/mllam-data-prep", rev = "feat/inference-cli-args" }
 
 [build-system]
 requires = ["pdm-backend"]
