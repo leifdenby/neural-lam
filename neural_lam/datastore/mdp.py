@@ -98,8 +98,8 @@ class MDPDatastore(BaseRegularGridDatastore):
         rank_zero_print("With the following splits (over time):")
         for split in required_splits:
             da_split = self._ds.splits.sel(split_name=split)
-            da_split_start = da_split.sel(split_part="start").load().item()
-            da_split_end = da_split.sel(split_part="end").load().item()
+            da_split_start = da_split.sel(split_part="start").load().data
+            da_split_end = da_split.sel(split_part="end").load().data
             rank_zero_print(f" {split:<8s}: {da_split_start} to {da_split_end}")
 
         # find out the dimension order for the stacking to grid-index
@@ -310,13 +310,13 @@ class MDPDatastore(BaseRegularGridDatastore):
                 self._ds.splits.sel(split_name=split)
                 .sel(split_part="start")
                 .load()
-                .item()
+                .data
             )
             t_end = (
                 self._ds.splits.sel(split_name=split)
                 .sel(split_part="end")
                 .load()
-                .item()
+                .data
             )
             da_category = da_category.sel(
                 {self.time_sampling_dim: slice(t_start, t_end)}
