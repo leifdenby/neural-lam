@@ -2,7 +2,7 @@
 import json
 import random
 import time
-from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
+from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
 
 # Third-party
 # for logging the model:
@@ -328,11 +328,19 @@ def main(input_args=None):
             training_logger, val_steps=args.val_steps_to_log
         )  # Do after initializing logger
     if args.eval:
-        trainer.test(
-            model=model,
-            datamodule=data_module,
-            ckpt_path=args.load,
-        )
+        # XXX: as of torch 2.6.0 the default when loading checkpoints was
+        # `weights_only=True`, but we also save the argparse Namespace object
+        # for the model parameters etc, so we need to include everything or
+        # explicitly allow the `Namespace` object to be loaded. We do the
+        # latter here since the default was changed to avoid arbitrary code
+        # execution when loading checkpoints.
+        with torch.serialization.safe_globals([Namespace]):
+            trainer.test(
+                model=model,
+                datamodule=data_module,
+                ckpt_path=args.load,
+                weights_only=False,
+            )
     else:
         trainer.fit(model=model, datamodule=data_module, ckpt_path=args.load)
 
