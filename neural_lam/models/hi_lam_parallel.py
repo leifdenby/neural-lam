@@ -1,10 +1,11 @@
 # Third-party
 import torch
-import torch_geometric as pyg
+from torch import nn
 
 # Local
 from ..config import NeuralLAMConfig
 from ..datastore import BaseDatastore
+from ..graph_data import GraphEdgesAndFeatures, GraphSizes
 from ..interaction_net import InteractionNet
 from .base_hi_graph_model import BaseHiGraphModel
 
@@ -18,8 +19,21 @@ class HiLAMParallel(BaseHiGraphModel):
     of Hi-LAM.
     """
 
-    def __init__(self, args, config: NeuralLAMConfig, datastore: BaseDatastore):
-        super().__init__(args, config=config, datastore=datastore)
+    def __init__(
+        self,
+        args,
+        config: NeuralLAMConfig,
+        datastore: BaseDatastore,
+        graph: GraphEdgesAndFeatures,
+        graph_sizes: GraphSizes,
+    ):
+        super().__init__(
+            args,
+            config=config,
+            datastore=datastore,
+            graph=graph,
+            graph_sizes=graph_sizes,
+        )
 
         # Processor GNNs
         # Create the complete edge_index combining all edges for processing
@@ -29,14 +43,16 @@ class HiLAMParallel(BaseHiGraphModel):
             + list(self.mesh_down_edge_index)
         )
         total_edge_index = torch.cat(total_edge_index_list, dim=1)
-        self.edge_split_sections = [ei.shape[1] for ei in total_edge_index_list]
+        self.register_buffer(
+            "total_edge_index", total_edge_index, persistent=False
+        )
+        self.edge_split_sections = graph_sizes.edge_split_sections
 
         if args.processor_layers == 0:
-            self.processor = lambda x, edge_attr: (x, edge_attr)
+            self.processor_nets = nn.ModuleList()
         else:
             processor_nets = [
                 InteractionNet(
-                    total_edge_index,
                     args.hidden_dim,
                     hidden_layers=args.hidden_layers,
                     edge_chunk_sizes=self.edge_split_sections,
@@ -44,13 +60,7 @@ class HiLAMParallel(BaseHiGraphModel):
                 )
                 for _ in range(args.processor_layers)
             ]
-            self.processor = pyg.nn.Sequential(
-                "mesh_rep, edge_rep",
-                [
-                    (net, "mesh_rep, mesh_rep, edge_rep -> mesh_rep, edge_rep")
-                    for net in processor_nets
-                ],
-            )
+            self.processor_nets = nn.ModuleList(processor_nets)
 
     def hi_processor_step(
         self, mesh_rep_levels, mesh_same_rep, mesh_up_rep, mesh_down_rep
@@ -76,7 +86,13 @@ class HiLAMParallel(BaseHiGraphModel):
         )  # (B, M_mesh, d_h)
 
         # Here, update mesh_*_rep and mesh_rep
-        mesh_rep, mesh_edge_rep = self.processor(mesh_rep, mesh_edge_rep)
+        for net in self.processor_nets:
+            mesh_rep, mesh_edge_rep = net(
+                mesh_rep,
+                mesh_rep,
+                mesh_edge_rep,
+                edge_index=self.total_edge_index,
+            )
 
         # Split up again for read-out step
         mesh_rep_levels = list(

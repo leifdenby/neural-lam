@@ -12,6 +12,7 @@ import torch
 from neural_lam import config as nlconfig
 from neural_lam import vis
 from neural_lam.create_graph import create_graph_from_datastore
+from neural_lam.graph_data import load_graph
 from neural_lam.models.graph_lam import GraphLAM
 from neural_lam.weather_dataset import WeatherDataset
 from tests.dummy_datastore import DummyDatastore
@@ -65,11 +66,16 @@ def model_and_batch(tmp_path, time_step, time_unit):
         ),
     )
 
+    graph = load_graph(graph_dir_path=graph_dir_path)
+    graph_sizes = graph.sizes()
+
     # Create model
     model = GraphLAM(
         args=ModelArgs(),
         config=config,
         datastore=datastore,
+        graph=graph,
+        graph_sizes=graph_sizes,
     )
 
     # Create dataset to get a sample batch

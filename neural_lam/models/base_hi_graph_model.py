@@ -5,6 +5,7 @@ from torch import nn
 from .. import utils
 from ..config import NeuralLAMConfig
 from ..datastore import BaseDatastore
+from ..graph_data import GraphEdgesAndFeatures, GraphSizes
 from ..interaction_net import InteractionNet
 from .base_graph_model import BaseGraphModel
 
@@ -14,40 +15,57 @@ class BaseHiGraphModel(BaseGraphModel):
     Base class for hierarchical graph models.
     """
 
-    def __init__(self, args, config: NeuralLAMConfig, datastore: BaseDatastore):
-        super().__init__(args, config=config, datastore=datastore)
+    def __init__(
+        self,
+        args,
+        config: NeuralLAMConfig,
+        datastore: BaseDatastore,
+        graph: GraphEdgesAndFeatures,
+        graph_sizes: GraphSizes,
+    ):
+        super().__init__(
+            args,
+            config=config,
+            datastore=datastore,
+            graph=graph,
+            graph_sizes=graph_sizes,
+        )
 
         # Track number of nodes, edges on each level
         # Flatten lists for efficient embedding
-        self.num_levels = len(self.mesh_static_features)
+        self.num_levels = graph_sizes.num_levels
 
         # Number of mesh nodes at each level
-        self.level_mesh_sizes = [
-            mesh_feat.shape[0] for mesh_feat in self.mesh_static_features
-        ]  # Needs as python list for later
+        self.level_mesh_sizes = (
+            graph_sizes.mesh_level_sizes
+        )  # Needs as python list for later
 
         # Print some useful info
         utils.rank_zero_print("Loaded hierarchical graph with structure:")
         for level_index, level_mesh_size in enumerate(self.level_mesh_sizes):
-            same_level_edges = self.m2m_features[level_index].shape[0]
+            same_level_edges = graph_sizes.m2m_edge_counts[level_index]
             utils.rank_zero_print(
                 f"level {level_index} - {level_mesh_size} nodes, "
                 f"{same_level_edges} same-level edges"
             )
 
             if level_index < (self.num_levels - 1):
-                up_edges = self.mesh_up_features[level_index].shape[0]
-                down_edges = self.mesh_down_features[level_index].shape[0]
+                up_edges = graph_sizes.mesh_up_edge_counts[level_index]
+                down_edges = graph_sizes.mesh_down_edge_counts[level_index]
                 utils.rank_zero_print(f"  {level_index}<->{level_index + 1}")
                 utils.rank_zero_print(
                     f" - {up_edges} up edges, {down_edges} down edges"
                 )
         # Embedders
         # Assume all levels have same static feature dimensionality
-        mesh_dim = self.mesh_static_features[0].shape[1]
-        mesh_same_dim = self.m2m_features[0].shape[1]
-        mesh_up_dim = self.mesh_up_features[0].shape[1]
-        mesh_down_dim = self.mesh_down_features[0].shape[1]
+        mesh_dim = graph_sizes.mesh_dim
+        mesh_same_dim = graph_sizes.m2m_dim
+        mesh_up_dim = graph_sizes.mesh_up_dim
+        mesh_down_dim = graph_sizes.mesh_down_dim
+        if mesh_up_dim is None or mesh_down_dim is None:
+            raise ValueError(
+                "Hierarchical graph missing up/down edge features."
+            )
 
         # Separate mesh node embedders for each level
         self.mesh_embedders = nn.ModuleList(
@@ -80,11 +98,10 @@ class BaseHiGraphModel(BaseGraphModel):
         self.mesh_init_gnns = nn.ModuleList(
             [
                 InteractionNet(
-                    edge_index,
                     args.hidden_dim,
                     hidden_layers=args.hidden_layers,
                 )
-                for edge_index in self.mesh_up_edge_index
+                for _ in self.mesh_up_edge_index
             ]
         )
 
@@ -92,12 +109,11 @@ class BaseHiGraphModel(BaseGraphModel):
         self.mesh_read_gnns = nn.ModuleList(
             [
                 InteractionNet(
-                    edge_index,
                     args.hidden_dim,
                     hidden_layers=args.hidden_layers,
                     update_edges=False,
                 )
-                for edge_index in self.mesh_down_edge_index
+                for _ in self.mesh_down_edge_index
             ]
         )
 
@@ -106,13 +122,10 @@ class BaseHiGraphModel(BaseGraphModel):
         Compute number of mesh nodes from loaded features,
         and number of mesh nodes that should be ignored in encoding/decoding
         """
-        num_mesh_nodes = sum(
-            node_feat.shape[0] for node_feat in self.mesh_static_features
+        return (
+            self.graph_sizes.num_mesh_nodes,
+            self.graph_sizes.num_mesh_nodes_ignore,
         )
-        num_mesh_nodes_ignore = (
-            num_mesh_nodes - self.mesh_static_features[0].shape[0]
-        )
-        return num_mesh_nodes, num_mesh_nodes_ignore
 
     def embedd_mesh_nodes(self):
         """
@@ -179,7 +192,10 @@ class BaseHiGraphModel(BaseGraphModel):
 
             # Apply GNN
             new_node_rep, new_edge_rep = gnn(
-                send_node_rep, rec_node_rep, edge_rep
+                send_node_rep,
+                rec_node_rep,
+                edge_rep,
+                edge_index=self.mesh_up_edge_index[level_l - 1],
             )
 
             # Update node and edge vectors in lists
@@ -208,7 +224,12 @@ class BaseHiGraphModel(BaseGraphModel):
             edge_rep = mesh_down_rep[level_l]
 
             # Apply GNN
-            new_node_rep = gnn(send_node_rep, rec_node_rep, edge_rep)
+            new_node_rep = gnn(
+                send_node_rep,
+                rec_node_rep,
+                edge_rep,
+                edge_index=self.mesh_down_edge_index[level_l],
+            )
 
             # Update node and edge vectors in lists
             mesh_rep_levels[level_l] = (

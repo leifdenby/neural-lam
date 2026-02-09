@@ -5,6 +5,7 @@ import torch
 from .. import utils
 from ..config import NeuralLAMConfig
 from ..datastore import BaseDatastore
+from ..graph_data import GraphEdgesAndFeatures, GraphSizes
 from ..interaction_net import InteractionNet
 from .ar_model import ARModel
 
@@ -15,17 +16,29 @@ class BaseGraphModel(ARModel):
     the encode-process-decode idea.
     """
 
-    def __init__(self, args, config: NeuralLAMConfig, datastore: BaseDatastore):
+    def __init__(
+        self,
+        args,
+        config: NeuralLAMConfig,
+        datastore: BaseDatastore,
+        graph: GraphEdgesAndFeatures,
+        graph_sizes: GraphSizes,
+    ):
         super().__init__(args, config=config, datastore=datastore)
+
+        if graph.hierarchical != graph_sizes.hierarchical:
+            raise ValueError(
+                "GraphSizes.hierarchical does not match GraphEdgesAndFeatures"
+            )
+
+        # Store graph sizes
+        self.graph_sizes = graph_sizes
 
         # Load graph with static features
         # NOTE: (IMPORTANT!) mesh nodes MUST have the first
         # num_mesh_nodes indices,
-        graph_dir_path = datastore.root_path / "graph" / args.graph
-        self.hierarchical, graph_ldict = utils.load_graph(
-            graph_dir_path=graph_dir_path
-        )
-        for name, attr_value in graph_ldict.items():
+        self.hierarchical = graph.hierarchical
+        for name, attr_value in graph.as_dict().items():
             # Make BufferLists module members and register tensors as buffers
             if isinstance(attr_value, torch.Tensor):
                 self.register_buffer(name, attr_value, persistent=False)
@@ -33,15 +46,17 @@ class BaseGraphModel(ARModel):
                 setattr(self, name, attr_value)
 
         # Specify dimensions of data
-        self.num_mesh_nodes, _ = self.get_num_mesh()
+        self.num_mesh_nodes = graph_sizes.num_mesh_nodes
         utils.rank_zero_print(
             f"Loaded graph with {self.num_grid_nodes + self.num_mesh_nodes} "
             f"nodes ({self.num_grid_nodes} grid, {self.num_mesh_nodes} mesh)"
         )
 
         # grid_dim from data + static
-        self.g2m_edges, g2m_dim = self.g2m_features.shape
-        self.m2g_edges, m2g_dim = self.m2g_features.shape
+        self.g2m_edges = graph_sizes.g2m_edges
+        self.m2g_edges = graph_sizes.m2g_edges
+        g2m_dim = graph_sizes.g2m_dim
+        m2g_dim = graph_sizes.m2g_dim
 
         # Define sub-models
         # Feature embedders for grid
@@ -55,7 +70,6 @@ class BaseGraphModel(ARModel):
         # GNNs
         # encoder
         self.g2m_gnn = InteractionNet(
-            self.g2m_edge_index,
             args.hidden_dim,
             hidden_layers=args.hidden_layers,
             update_edges=False,
@@ -66,7 +80,6 @@ class BaseGraphModel(ARModel):
 
         # decoder
         self.m2g_gnn = InteractionNet(
-            self.m2g_edge_index,
             args.hidden_dim,
             hidden_layers=args.hidden_layers,
             update_edges=False,
@@ -323,7 +336,10 @@ class BaseGraphModel(ARModel):
 
         # This also splits representation into grid and mesh
         mesh_rep = self.g2m_gnn(
-            grid_emb, mesh_emb_expanded, g2m_emb_expanded
+            grid_emb,
+            mesh_emb_expanded,
+            g2m_emb_expanded,
+            edge_index=self.g2m_edge_index,
         )  # (B, num_mesh_nodes, d_h)
         # Also MLP with residual for grid representation
         grid_rep = grid_emb + self.encoding_grid_mlp(
@@ -336,7 +352,10 @@ class BaseGraphModel(ARModel):
         # Map back from mesh to grid
         m2g_emb_expanded = self.expand_to_batch(m2g_emb, batch_size)
         grid_rep = self.m2g_gnn(
-            mesh_rep, grid_rep, m2g_emb_expanded
+            mesh_rep,
+            grid_rep,
+            m2g_emb_expanded,
+            edge_index=self.m2g_edge_index,
         )  # (B, num_grid_nodes, d_h)
 
         # Map to output dimension, only for grid

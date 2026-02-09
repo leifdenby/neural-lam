@@ -14,6 +14,7 @@ from loguru import logger
 # Local
 from . import utils
 from .config import load_config_and_datastore
+from .graph_data import load_graph
 from .models import GraphLAM, HiLAM, HiLAMParallel
 from .weather_dataset import WeatherDataModule
 
@@ -288,7 +289,16 @@ def main(input_args=None):
 
     # Load model parameters Use new args for model
     ModelClass = MODELS[args.model]
-    model = ModelClass(args, config=config, datastore=datastore)
+    graph_dir_path = datastore.root_path / "graph" / args.graph
+    graph = load_graph(graph_dir_path=graph_dir_path)
+    graph_sizes = graph.sizes()
+    model = ModelClass(
+        args,
+        config=config,
+        datastore=datastore,
+        graph=graph,
+        graph_sizes=graph_sizes,
+    )
 
     if args.eval:
         prefix = f"eval-{args.eval}-"

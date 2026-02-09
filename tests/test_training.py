@@ -12,6 +12,7 @@ from neural_lam import config as nlconfig
 from neural_lam.create_graph import create_graph_from_datastore
 from neural_lam.datastore import DATASTORES
 from neural_lam.datastore.base import BaseRegularGridDatastore
+from neural_lam.graph_data import load_graph
 from neural_lam.models.graph_lam import GraphLAM
 from neural_lam.weather_dataset import WeatherDataModule
 from tests.conftest import init_datastore_example
@@ -99,10 +100,15 @@ def run_simple_training(datastore, set_output_std):
         )
     )
 
+    graph = load_graph(graph_dir_path=graph_dir_path)
+    graph_sizes = graph.sizes()
+
     model = GraphLAM(  # noqa
         args=model_args,
         datastore=datastore,
         config=config,
+        graph=graph,
+        graph_sizes=graph_sizes,
     )
     wandb.init()
     trainer.fit(model=model, datamodule=data_module)

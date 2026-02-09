@@ -1,10 +1,11 @@
 # Third-party
-import torch_geometric as pyg
+from torch import nn
 
 # Local
 from .. import utils
 from ..config import NeuralLAMConfig
 from ..datastore import BaseDatastore
+from ..graph_data import GraphEdgesAndFeatures, GraphSizes
 from ..interaction_net import InteractionNet
 from .base_graph_model import BaseGraphModel
 
@@ -17,16 +18,30 @@ class GraphLAM(BaseGraphModel):
     Oskarsson et al. (2023).
     """
 
-    def __init__(self, args, config: NeuralLAMConfig, datastore: BaseDatastore):
-        super().__init__(args, config=config, datastore=datastore)
+    def __init__(
+        self,
+        args,
+        config: NeuralLAMConfig,
+        datastore: BaseDatastore,
+        graph: GraphEdgesAndFeatures,
+        graph_sizes: GraphSizes,
+    ):
+        super().__init__(
+            args,
+            config=config,
+            datastore=datastore,
+            graph=graph,
+            graph_sizes=graph_sizes,
+        )
 
         assert (
             not self.hierarchical
         ), "GraphLAM does not use a hierarchical mesh graph"
 
         # grid_dim from data + static + batch_static
-        mesh_dim = self.mesh_static_features.shape[1]
-        m2m_edges, m2m_dim = self.m2m_features.shape
+        mesh_dim = graph_sizes.mesh_dim
+        m2m_edges = graph_sizes.m2m_edge_counts[0]
+        m2m_dim = graph_sizes.m2m_dim
         utils.rank_zero_print(
             f"Edges in subgraphs: m2m={m2m_edges}, g2m={self.g2m_edges}, "
             f"m2g={self.m2g_edges}"
@@ -39,21 +54,15 @@ class GraphLAM(BaseGraphModel):
 
         # GNNs
         # processor
-        processor_nets = [
-            InteractionNet(
-                self.m2m_edge_index,
-                args.hidden_dim,
-                hidden_layers=args.hidden_layers,
-                aggr=args.mesh_aggr,
-            )
-            for _ in range(args.processor_layers)
-        ]
-        self.processor = pyg.nn.Sequential(
-            "mesh_rep, edge_rep",
+        self.processor_nets = nn.ModuleList(
             [
-                (net, "mesh_rep, mesh_rep, edge_rep -> mesh_rep, edge_rep")
-                for net in processor_nets
-            ],
+                InteractionNet(
+                    args.hidden_dim,
+                    hidden_layers=args.hidden_layers,
+                    aggr=args.mesh_aggr,
+                )
+                for _ in range(args.processor_layers)
+            ]
         )
 
     def get_num_mesh(self):
@@ -85,7 +94,12 @@ class GraphLAM(BaseGraphModel):
             m2m_emb, batch_size
         )  # (B, M_mesh, d_h)
 
-        mesh_rep, _ = self.processor(
-            mesh_rep, m2m_emb_expanded
-        )  # (B, N_mesh, d_h)
+        edge_rep = m2m_emb_expanded
+        for net in self.processor_nets:
+            mesh_rep, edge_rep = net(
+                mesh_rep,
+                mesh_rep,
+                edge_rep,
+                edge_index=self.m2m_edge_index,
+            )
         return mesh_rep

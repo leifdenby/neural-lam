@@ -8,8 +8,8 @@ import plotly.graph_objects as go
 import torch_geometric as pyg
 
 # Local
-from . import utils
 from .config import load_config_and_datastore
+from .graph_data import load_graph
 
 MESH_HEIGHT = 0.1
 MESH_LEVEL_DIST = 0.2
@@ -56,21 +56,14 @@ def main():
 
     # Load graph data
     graph_dir_path = os.path.join(datastore.root_path, "graph", args.graph)
-    hierarchical, graph_ldict = utils.load_graph(graph_dir_path=graph_dir_path)
-    (
-        g2m_edge_index,
-        m2g_edge_index,
-        m2m_edge_index,
-    ) = (
-        graph_ldict["g2m_edge_index"],
-        graph_ldict["m2g_edge_index"],
-        graph_ldict["m2m_edge_index"],
-    )
-    mesh_up_edge_index, mesh_down_edge_index = (
-        graph_ldict["mesh_up_edge_index"],
-        graph_ldict["mesh_down_edge_index"],
-    )
-    mesh_static_features = graph_ldict["mesh_static_features"]
+    graph = load_graph(graph_dir_path=graph_dir_path)
+    hierarchical = graph.hierarchical
+    g2m_edge_index = graph.g2m_edge_index
+    m2g_edge_index = graph.m2g_edge_index
+    m2m_edge_index = graph.m2m_edge_index
+    mesh_up_edge_index = graph.mesh_up_edge_index
+    mesh_down_edge_index = graph.mesh_down_edge_index
+    mesh_static_features = graph.mesh_static_features
 
     # Add in z-dimension
     z_grid = GRID_HEIGHT * np.ones((grid_pos.shape[0],))
