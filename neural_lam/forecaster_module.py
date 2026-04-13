@@ -144,7 +144,11 @@ class MetricTracking:
             plt.close("all")  # Close all figs
 
 
-class ForecasterModule(pl.LightningModule):
+# Local
+from .metric_logging import MetricLoggingMixin
+
+
+class ForecasterModule(pl.LightningModule, MetricLoggingMixin):
     """
     Takes over much of the responsibility of the old ARModel. Handles things
     not directly related to the nerual network components such as plotting,
@@ -182,6 +186,7 @@ class ForecasterModule(pl.LightningModule):
         self.restore_opt = args.restore_opt
 
         self._logging_config = MetricLoggingConfig()
+        self.metrics = self._setup_metrics_logging()
 
     def _register_buffers(self):
         # Load static features standardized
@@ -318,6 +323,8 @@ class ForecasterModule(pl.LightningModule):
         prediction, target, pred_std, _ = self.forward(batch)
 
         # Compute loss
+        self._update_metrics("train", prediction, target)
+
         batch_loss = torch.mean(
             self.loss(
                 prediction, target, pred_std, mask=self.interior_mask_bool
@@ -337,6 +344,9 @@ class ForecasterModule(pl.LightningModule):
 
     # newer lightning versions requires batch_idx argument, even if unused
     # pylint: disable-next=unused-argument
+    def on_train_epoch_end(self):
+        self._log_metrics("train")
+
     def validation_step(self, batch, batch_idx):
         """
         Run validation on single batch
@@ -375,6 +385,7 @@ class ForecasterModule(pl.LightningModule):
             sum_vars=False,
         )  # (B, pred_steps, d_f)
         self.val_metrics["mse"].append(entry_mses)
+        self._update_metrics("val", prediction, target)
 
     def on_validation_epoch_end(self):
         """
@@ -382,6 +393,7 @@ class ForecasterModule(pl.LightningModule):
         """
         # Create error maps for all test metrics
         self.aggregate_and_plot_metrics(self.val_metrics, prefix="val")
+        self._log_metrics("val")
 
         # Clear lists with validation metrics values
         for metric_list in self.val_metrics.values():
@@ -433,6 +445,7 @@ class ForecasterModule(pl.LightningModule):
                 sum_vars=False,
             )  # (B, pred_steps, d_f)
             self.test_metrics[metric_name].append(batch_metric_vals)
+        self._update_metrics("test", prediction, target)
 
         if self.output_std:
             # Store output std. per variable, spatially averaged
@@ -687,86 +700,3 @@ def plot_examples(batch, n_examples, split, prediction=None):
                 f"example_target_{self.plotted_examples}.pt",
             ),
         )
-
-    def _update_metrics(self, split, preds, targets):
-        """Updates metric calculations for a given split."""
-        for key, metric in self.metrics.get(split, {}).items():
-            _, _, var, step = key.rsplit(":", 3)
-            step = int(step)
-            metric.update(preds[:, step, :], targets[:, step, :])
-
-    def _log_metrics(self, split):
-        """Logs and visualizes metrics as heatmaps."""
-        metrics = list({cfg.metric for cfg in self.config.heatmaps})
-        heatmap_data = xr.DataArray(
-            data=torch.zeros(
-                (len(metrics), len(self.variables), self.ar_steps)
-            ).numpy(),
-            dims=["metric", "variable", "step"],
-            coords={
-                "metric": metrics,
-                "variable": self.variables,
-                "step": list(range(self.ar_steps)),
-            },
-        )
-
-        for key, metric in self.metrics.get(split, {}).items():
-            parsed = parse(self.LOGGED_METRIC_KEY_FORMAT, key)
-            variable = parsed["variable"]
-            step = parsed["step"]
-
-            value = metric.compute()
-            self.log(f"{split}_{key}", value, prog_bar=True)
-            metric.reset()
-
-            heatmap_data.loc[parsed["metric"], variable, step] = value
-
-        for metric_name in heatmap_data.coords["metric"].values:
-            plt.figure()
-            plt.imshow(
-                heatmap_data.sel(metric=metric_name).values,
-                aspect="auto",
-                cmap="viridis",
-            )
-            plt.xticks(
-                ticks=range(self.ar_steps),
-                labels=[f"Step {i}" for i in range(self.ar_steps)],
-            )
-            plt.yticks(ticks=range(len(self.variables)), labels=self.variables)
-            plt.colorbar(label=metric_name)
-            plt.title(f"{split} Heatmap for {metric_name}")
-            plt.savefig(f"{split}_heatmap_{metric_name}.png")
-            plt.close()
-
-    def training_step(self, batch, batch_idx):
-        """Defines a single training step."""
-        x, y = batch
-        y_hat = self(x)
-        self._update_metrics("train", y_hat, y)
-        return F.mse_loss(y_hat, y)
-
-    def validation_step(self, batch, batch_idx):
-        """Defines a single validation step."""
-        x, y = batch
-        y_hat = self(x)
-        self._update_metrics("val", y_hat, y)
-        return F.mse_loss(y_hat, y)
-
-    def test_step(self, batch, batch_idx):
-        """Defines a single test step."""
-        x, y = batch
-        y_hat = self(x)
-        self._update_metrics("test", y_hat, y)
-        return F.mse_loss(y_hat, y)
-
-    def on_train_epoch_end(self):
-        """Logs metrics at the end of a training epoch."""
-        self._log_metrics("train")
-
-    def on_validation_epoch_end(self):
-        """Logs metrics at the end of a validation epoch."""
-        self._log_metrics("val")
-
-    def on_test_epoch_end(self):
-        """Logs metrics at the end of a test epoch."""
-        self._log_metrics("test")
