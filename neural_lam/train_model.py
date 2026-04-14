@@ -1,5 +1,4 @@
 # Standard library
-import json
 import random
 import time
 from argparse import ArgumentParser
@@ -14,8 +13,10 @@ from loguru import logger
 # Local
 from . import utils
 from .config import load_config_and_datastore
-from .forecaster_module import MetricWatchShorthand
+from .forecaster_module import ForecasterModule
+from .metric_logging import MetricLoggingConfig
 from .models import GraphLAM, HiLAM, HiLAMParallel
+from .models.forecaster.ar_forecaster import ARForecaster
 from .weather_dataset import WeatherDataModule
 
 MODELS = {
@@ -84,8 +85,7 @@ def main(input_args=None):
     parser.add_argument(
         "--restore_opt",
         action="store_true",
-        help="If optimizer state should be restored with model "
-        "(default: false)",
+        help="If optimizer state should be restored with model (default: false)",  # noqa: E501
     )
     parser.add_argument(
         "--precision",
@@ -99,8 +99,7 @@ def main(input_args=None):
         "--graph",
         type=str,
         default="multiscale",
-        help="Graph to load and use in graph-based model "
-        "(default: multiscale)",
+        help="Graph to load and use in graph-based model (default: multiscale)",
     )
     parser.add_argument(
         "--hidden_dim",
@@ -140,8 +139,7 @@ def main(input_args=None):
         "--ar_steps_train",
         type=int,
         default=1,
-        help="Number of steps to unroll prediction for in loss function "
-        "(default: 1)",
+        help="Number of steps to unroll prediction for in loss function (default: 1)",  # noqa: E501
     )
     parser.add_argument(
         "--loss",
@@ -156,30 +154,26 @@ def main(input_args=None):
         "--val_interval",
         type=int,
         default=1,
-        help="Number of epochs training between each validation run "
-        "(default: 1)",
+        help="Number of epochs training between each validation run (default: 1)",  # noqa: E501
     )
 
     # Evaluation options
     parser.add_argument(
         "--eval",
         type=str,
-        help="Eval model on given data split (val/test) "
-        "(default: None (train model))",
+        help="Eval model on given data split (val/test) (default: None (train model))",  # noqa: E501
     )
     parser.add_argument(
         "--ar_steps_eval",
         type=int,
         default=10,
-        help="Number of steps to unroll prediction for during evaluation "
-        "(default: 10)",
+        help="Number of steps to unroll prediction for during evaluation (default: 10)",  # noqa: E501
     )
     parser.add_argument(
         "--n_example_pred",
         type=int,
         default=1,
-        help="Number of example predictions to plot during evaluation "
-        "(default: 1)",
+        help="Number of example predictions to plot during evaluation (default: 1)",  # noqa: E501
     )
 
     # Logger Settings
@@ -204,13 +198,19 @@ def main(input_args=None):
         help="Steps to log val loss for (default: 1 2 3 5 10 15 19)",
     )
     parser.add_argument(
-        "--metrics_watch",
+        "--metric_heatmaps",
         nargs="+",
-        type=MetricWatchShorthand,
+        type=str,
         default=[],
-        help="List of metrics to watch, including any prefix (e.g. val_rmse=1 to "
-        "watch rmse during the val-split execution at step roll-out step 1, or "
-        "train_mse=1,2,3 to watch mse during the train-split execution",
+        help="List of metrics to plot as heatmaps over roll-out steps, "
+        "format is <split>:<metric>",
+    )
+    parser.add_argument(
+        "--metric_traces",
+        nargs="+",
+        type=str,
+        default=[],
+        help="List of metrics to watch, format is <split>:<metric>:<variable>:<step>",  # noqa: E501
     )
     parser.add_argument(
         "--num_past_forcing_steps",
@@ -225,9 +225,6 @@ def main(input_args=None):
         help="Number of future time steps to use as input for forcing data",
     )
     args = parser.parse_args(input_args)
-    args.var_leads_metrics_watch = {
-        int(k): v for k, v in json.loads(args.var_leads_metrics_watch).items()
-    }
 
     # Standard library
     import dataclasses
@@ -329,7 +326,22 @@ def main(input_args=None):
 
     # Load model parameters Use new args for model
     ModelClass = MODELS[args.model]
-    model = ModelClass(args, config=config, datastore=datastore)
+    core_model = ModelClass(args, config=config, datastore=datastore)
+
+    forecaster = ARForecaster(
+        step_predictor=core_model, num_prediction_steps=args.ar_steps_eval
+    )
+    logging_config = MetricLoggingConfig.from_args(
+        heatmaps=args.metric_heatmaps, traces=args.metric_traces
+    )
+
+    module = ForecasterModule(
+        args=args,
+        config=config,
+        forecaster=forecaster,
+        logging_config=logging_config,
+        datastore=datastore,
+    )
 
     if args.eval:
         prefix = f"eval-{args.eval}-"
@@ -372,12 +384,12 @@ def main(input_args=None):
         )  # Do after initializing logger
     if args.eval:
         trainer.test(
-            model=model,
+            model=module,
             datamodule=data_module,
             ckpt_path=args.load,
         )
     else:
-        trainer.fit(model=model, datamodule=data_module, ckpt_path=args.load)
+        trainer.fit(model=module, datamodule=data_module, ckpt_path=args.load)
 
 
 if __name__ == "__main__":

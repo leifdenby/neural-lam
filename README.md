@@ -429,6 +429,8 @@ A few of the key ones are outlined below:
 * `--processor_layers`: Number of GNN layers to use in the processing part of the model
 * `--ar_steps_train`: Number of time steps to unroll for when making predictions and computing the loss
 * `--ar_steps_eval`: Number of time steps to unroll for during validation steps
+* `--metric_heatmaps`: List of metrics to plot as heatmaps over roll-out steps, format is `<split>:<metric>` (e.g. `val:mse`)
+* `--metric_traces`: List of metrics to watch, format is `<split>:<metric>:<variable>:<step>` (e.g. `val:mse:t2m:3`)
 
 Checkpoints of trained models are stored in the `saved_models` directory.
 The implemented models are:

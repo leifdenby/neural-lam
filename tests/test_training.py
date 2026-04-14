@@ -23,8 +23,7 @@ def test_training(datastore_name):
 
     if not isinstance(datastore, BaseRegularGridDatastore):
         pytest.skip(
-            f"Skipping test for {datastore_name} as it is not a regular "
-            "grid datastore."
+            f"Skipping test for {datastore_name} as it is not a regular grid datastore."  # noqa: E501
         )
 
     if torch.cuda.is_available():
@@ -85,7 +84,8 @@ def test_training(datastore_name):
         mesh_aggr = "sum"
         lr = 1.0e-3
         val_steps_to_log = [1, 3]
-        metrics_watch = []
+        metric_heatmaps = []
+        metric_traces = []
         num_past_forcing_steps = 1
         num_future_forcing_steps = 1
 
@@ -97,10 +97,29 @@ def test_training(datastore_name):
         )
     )
 
-    model = GraphLAM(  # noqa
+    # First-party
+    from neural_lam.forecaster_module import ForecasterModule
+    from neural_lam.metric_logging import MetricLoggingConfig
+    from neural_lam.models.forecaster.ar_forecaster import ARForecaster
+
+    core_model = GraphLAM(  # noqa
         args=model_args,
         datastore=datastore,
         config=config,
     )
-    wandb.init()
-    trainer.fit(model=model, datamodule=data_module)
+    forecaster = ARForecaster(
+        step_predictor=core_model,
+        num_prediction_steps=data_module.ar_steps_eval,
+    )
+    logging_config = MetricLoggingConfig.from_args(
+        heatmaps=model_args.metric_heatmaps, traces=model_args.metric_traces
+    )
+    module = ForecasterModule(
+        args=model_args,
+        config=config,
+        forecaster=forecaster,
+        logging_config=logging_config,
+        datastore=datastore,
+    )
+    wandb.init(mode="disabled")
+    trainer.fit(model=module, datamodule=data_module)

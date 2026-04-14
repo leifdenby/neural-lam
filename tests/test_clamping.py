@@ -38,7 +38,8 @@ def test_clamping():
         mesh_aggr = "sum"
         lr = 1.0e-3
         val_steps_to_log = [1, 3]
-        metrics_watch = []
+        metric_heatmaps = []
+        metric_traces = []
         num_past_forcing_steps = 1
         num_future_forcing_steps = 1
 

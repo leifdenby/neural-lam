@@ -1,9 +1,8 @@
 # Third-party
 import torch
-from loguru import logger
 
 # Local
-from ..step_predictor import BaseStepPredictor, PersistanceStepPredictor
+from ..step_predictor import BaseStepPredictor
 from .base import BaseForecaster
 
 
@@ -15,20 +14,21 @@ class ARForecaster(BaseForecaster):
 
     _step_predictor: BaseStepPredictor
 
-    def __init__(self, num_prediction_steps):
-        logger.warning("Using persistance step predictor for now")
-        self.step_predictor = PersistanceStepPredictor()
+    def __init__(self, step_predictor: BaseStepPredictor, num_prediction_steps):
+        self.step_predictor = step_predictor
         self._num_prediction_steps = num_prediction_steps
 
     def forward(self, init_states, forcing_features, border_states):
         """
-        Roll out prediction taking multiple autoregressive steps with the step-predictor
+        Roll out prediction taking multiple autoregressive steps with the
+        step-predictor
 
         Parameters
         ----------
         init_states : torch.Tensor, shape [B, 2, num_grid_nodes, d_f]
             The initial states
-        forcing_features : torch.Tensor, shape [B, pred_steps, num_grid_nodes, d_static_f]
+        forcing_features : torch.Tensor, shape [B, pred_steps, num_grid_nodes,
+                                                d_static_f]
             The forcing features
         border_states : torch.Tensor, shape [B, pred_steps, num_grid_nodes, d_f]
             The border states
