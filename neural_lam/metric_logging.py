@@ -24,14 +24,15 @@ class HeatmapConfig:
         result = parse.parse(HeatmapConfig.STRING_FORMAT, s)
         if not result:
             raise ValueError(
-                f"Invalid heatmap config format: '{s}'. Expected format is {HeatmapConfig.STRING_FORMAT}."
+                f"Invalid heatmap config format: '{s}'. "
+                f"Expected format is {HeatmapConfig.STRING_FORMAT}."
             )
         return HeatmapConfig(**result)
 
 
 @dataclasses.dataclass(frozen=True)
 class TraceConfig:
-    """Configuration for trace metrics, defining the split, metric, variable, and timestep."""
+    """Config for trace metrics, defining split, metric, var, and step."""
 
     STRING_FORMAT = "{split}:{metric}:{variable}:{step}"
     split: str
@@ -45,7 +46,8 @@ class TraceConfig:
         result = parse.parse(TraceConfig.STRING_FORMAT, s)
         if not result:
             raise ValueError(
-                f"Invalid trace config format: '{s}'. Expected format is {TraceConfig.STRING_FORMAT}."
+                f"Invalid trace config format: '{s}'. "
+                f"Expected format is {TraceConfig.STRING_FORMAT}."
             )
         return TraceConfig(**result)
 
@@ -73,7 +75,7 @@ class MetricLoggingMixin:
     LOGGED_METRIC_KEY_FORMAT = TraceConfig.STRING_FORMAT
 
     def _setup_metrics_logging(self):
-        """Initializes logging of metrics based on the provided configurations."""
+        """Initializes logging of metrics based on the provided configs."""
         metrics = torch.nn.ModuleDict()
 
         if not hasattr(self, "_logging_config"):
@@ -115,10 +117,14 @@ class MetricLoggingMixin:
         if not hasattr(self, "metrics"):
             return
 
+        var_names = self._datastore.get_vars_names("state")
+        var_to_idx = {name: i for i, name in enumerate(var_names)}
+
         for key, metric in self.metrics.get(split, {}).items():
             _, _, var, step = key.rsplit(":", 3)
             step = int(step)
-            metric.update(preds[:, step, :], targets[:, step, :])
+            var_idx = var_to_idx[var]
+            metric.update(preds[:, step, var_idx], targets[:, step, var_idx])
 
     def _log_metrics(self, split):
         """Logs and visualizes metrics as heatmaps."""

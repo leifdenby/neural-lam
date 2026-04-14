@@ -157,6 +157,12 @@ class ForecasterModule(pl.LightningModule, MetricLoggingMixin):
     entirely sure about this).
     """
 
+    # Heatmaps require a metric to be tracked separately for all variables
+    # across all rollout steps. We therefore use TraceConfig.STRING_FORMAT
+    # ({split}:{metric}:{variable}:{step}) as a unified key to uniquely
+    # identify the individual metric objects for both heatmap plots and
+    # for metric trace plots (which track how a given split/variable/
+    # metric/rollout-step score evolves during training).
     LOGGED_METRIC_KEY_FORMAT = TraceConfig.STRING_FORMAT
 
     _forecaster: BaseForecaster
